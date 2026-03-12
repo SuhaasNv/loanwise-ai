@@ -8,6 +8,7 @@ import { Outlet } from "react-router-dom";
 import { useTheme } from "@/hooks/useTheme";
 
 export function DashboardLayout() {
+  const { theme, toggleTheme } = useTheme();
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
