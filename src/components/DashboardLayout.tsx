@@ -26,6 +26,9 @@ export function DashboardLayout() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={toggleTheme} aria-label="Toggle theme">
+                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </Button>
               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
                 <Bell className="h-4 w-4" />
               </Button>
