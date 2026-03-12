@@ -1,0 +1,99 @@
+import { useState, useMemo } from "react";
+import { useAgentLogs } from "@/hooks/useAgents";
+import { StatusBadge } from "@/components/StatusBadge";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Search, Bot } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { motion } from "framer-motion";
+
+export default function AgentActivityPage() {
+  const { data: logs, isLoading } = useAgentLogs();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const filtered = useMemo(() => {
+    if (!logs) return [];
+    return logs.filter((l) => {
+      const matchSearch = l.agentName.toLowerCase().includes(search.toLowerCase()) || l.action.toLowerCase().includes(search.toLowerCase());
+      const matchStatus = statusFilter === "all" || l.status === statusFilter;
+      return matchSearch && matchStatus;
+    });
+  }, [logs, search, statusFilter]);
+
+  return (
+    <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+        <h1 className="text-2xl font-bold tracking-tight">Agent Activity</h1>
+        <p className="text-sm text-muted-foreground mt-1">Monitor AI agent decisions and actions</p>
+      </motion.div>
+
+      <Card>
+        <CardHeader className="pb-4">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input placeholder="Search agents or actions..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 h-9 text-sm" />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-36 h-9 text-sm"><SelectValue placeholder="All" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="success">Success</SelectItem>
+                <SelectItem value="failure">Failed</SelectItem>
+                <SelectItem value="running">Running</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">Agent</TableHead>
+                <TableHead className="text-xs">Action</TableHead>
+                <TableHead className="text-xs">Timestamp</TableHead>
+                <TableHead className="text-xs">Confidence</TableHead>
+                <TableHead className="text-xs">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i}>
+                    {Array.from({ length: 5 }).map((_, j) => (
+                      <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No agent logs found</TableCell>
+                </TableRow>
+              ) : (
+                filtered.map((log) => (
+                  <TableRow key={log.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div className="h-7 w-7 rounded-md bg-accent/10 flex items-center justify-center">
+                          <Bot className="h-3.5 w-3.5 text-accent" />
+                        </div>
+                        <span className="text-sm font-medium">{log.agentName}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{log.action}</TableCell>
+                    <TableCell className="text-xs font-mono text-muted-foreground">{new Date(log.timestamp).toLocaleString()}</TableCell>
+                    <TableCell className="text-sm font-mono">{log.confidenceScore > 0 ? `${(log.confidenceScore * 100).toFixed(0)}%` : "—"}</TableCell>
+                    <TableCell><StatusBadge status={log.status} /></TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
