@@ -75,18 +75,32 @@ class ErrorBoundary extends Component<
 
 // ─── Auth helpers ────────────────────────────────────────────────────────────
 
-/** Registers Clerk's getToken and user ID with apiClient. */
+/** Registers Clerk's getToken, user ID, and role with apiClient. */
 function AuthTokenSync() {
   const { getToken } = useAuth();
   const { user } = useUser();
+
   useEffect(() => {
     setTokenGetter(getToken);
   }, [getToken]);
+
   useEffect(() => {
-    if (user) {
-      setUserContext({ userId: user.id });
-    }
+    if (!user) return;
+
+    // Set user ID immediately so API calls can fire
+    setUserContext({ userId: user.id });
+
+    // Fetch the backend role and inject it into every subsequent request
+    fetch(`${import.meta.env.VITE_API_URL ?? ""}/user/role?userId=${user.id}`)
+      .then((r) => r.json())
+      .then((data: { role?: string }) => {
+        if (data.role) {
+          setUserContext({ userId: user.id, role: data.role });
+        }
+      })
+      .catch(() => {/* non-blocking */});
   }, [user]);
+
   return null;
 }
 

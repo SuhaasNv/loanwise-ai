@@ -72,6 +72,32 @@ export async function apiClient<T>(
 }
 
 /**
+ * Authenticated fetch that returns the raw Response (for blobs, CSV, etc.).
+ * Uses the same headers as apiClient.
+ */
+export async function apiFetch(
+  endpoint: string,
+  options?: RequestInit
+): Promise<Response> {
+  if (USE_MOCK) {
+    throw new Error("apiFetch not supported in mock mode");
+  }
+  const token = _tokenGetter ? await _tokenGetter() : null;
+  const { userId, role } = _userContext;
+  const hasBody = options?.body != null;
+  return fetch(`${API_BASE}${endpoint}`, {
+    headers: {
+      ...(hasBody && { "Content-Type": "application/json" }),
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...(userId && { "X-User-Id": userId }),
+      ...(role && { "X-User-Role": role }),
+      ...options?.headers,
+    },
+    ...options,
+  });
+}
+
+/**
  * Lightweight health-check used by the offline banner.
  * Resolves true when the backend is reachable, false otherwise.
  */

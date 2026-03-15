@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { withdrawLoan } from "@/lib/api/loans";
+import { toast } from "sonner";
 import {
   CheckCircle2,
   XCircle,
@@ -84,7 +87,20 @@ const AGENT_STEPS = [
 
 export default function ApplicationStatusPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
   const [emailExpanded, setEmailExpanded] = useState(false);
+
+  const withdrawMutation = useMutation({
+    mutationFn: () => withdrawLoan(id!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["loan", id] });
+      qc.invalidateQueries({ queryKey: ["my-loans"] });
+      toast.success("Application withdrawn successfully");
+      navigate("/portal");
+    },
+    onError: () => toast.error("Failed to withdraw application. Please try again."),
+  });
 
   // Poll every 5 s while queued; stop once completed
   const { data: loan, isLoading, isError } = useQuery({
@@ -169,6 +185,19 @@ export default function ApplicationStatusPage() {
           <div className="mt-6 flex items-center justify-center gap-2 text-xs text-slate-400">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             Checking for updates every 5 seconds…
+          </div>
+          <div className="mt-4 border-t border-blue-100 pt-4">
+            <button
+              className="text-xs text-slate-400 hover:text-red-500 transition-colors"
+              onClick={() => {
+                if (confirm("Are you sure you want to withdraw this application? This cannot be undone.")) {
+                  withdrawMutation.mutate();
+                }
+              }}
+              disabled={withdrawMutation.isPending}
+            >
+              {withdrawMutation.isPending ? "Withdrawing…" : "Withdraw application"}
+            </button>
           </div>
         </div>
       </div>

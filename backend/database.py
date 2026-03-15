@@ -4,6 +4,7 @@ Uses Python's built-in sqlite3 — no extra dependencies.
 """
 import sqlite3
 import json
+import uuid
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -61,7 +62,9 @@ def init_db() -> None:
             approvalProbability REAL DEFAULT 0,
             confidence          REAL DEFAULT 0,
             recommendations     TEXT DEFAULT '[]',
-            factors             TEXT DEFAULT '[]'
+            factors             TEXT DEFAULT '[]',
+            managerNotes        TEXT DEFAULT '',
+            withdrawnAt         TEXT
         )
     """)
     conn.execute("""
@@ -75,7 +78,25 @@ def init_db() -> None:
             applicationId   TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id          TEXT PRIMARY KEY,
+            loanId      TEXT NOT NULL,
+            userId      TEXT,
+            action      TEXT NOT NULL,
+            detail      TEXT,
+            timestamp   TEXT NOT NULL
+        )
+    """)
     conn.commit()
+    # Add columns that may not exist on older DB files
+    _migrate(conn)
 
     # Seed mock loans if table is empty
     count = conn.execute("SELECT COUNT(*) FROM loans").fetchone()[0]
@@ -83,6 +104,16 @@ def init_db() -> None:
         _seed(conn)
 
     conn.close()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after initial schema creation."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(loans)").fetchall()}
+    if "managerNotes" not in cols:
+        conn.execute("ALTER TABLE loans ADD COLUMN managerNotes TEXT DEFAULT ''")
+    if "withdrawnAt" not in cols:
+        conn.execute("ALTER TABLE loans ADD COLUMN withdrawnAt TEXT")
+    conn.commit()
 
 
 def _seed(conn: sqlite3.Connection) -> None:
@@ -305,6 +336,82 @@ def compute_rejection_reasons() -> list[dict]:
         {"reason": "Employment History", "count": max(other // 2, 0)},
         {"reason": "Other", "count": max(other - other // 2, 0)},
     ]
+
+
+# ─── Settings helpers ─────────────────────────────────────────────────────────
+
+def get_settings() -> dict:
+    conn = get_db()
+    rows = conn.execute("SELECT key, value FROM settings").fetchall()
+    conn.close()
+    result = {}
+    for row in rows:
+        try:
+            result[row["key"]] = json.loads(row["value"])
+        except Exception:
+            result[row["key"]] = row["value"]
+    return result
+
+
+def save_settings(partial: dict) -> dict:
+    conn = get_db()
+    for key, value in partial.items():
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, json.dumps(value)),
+        )
+    conn.commit()
+    conn.close()
+    return get_settings()
+
+
+# ─── Audit log helpers ────────────────────────────────────────────────────────
+
+def insert_audit_log(loan_id: str, user_id: str, action: str, detail: str = "") -> None:
+    conn = get_db()
+    conn.execute("""
+        INSERT INTO audit_logs (id, loanId, userId, action, detail, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        loan_id, user_id, action, detail,
+        datetime.now(timezone.utc).isoformat(),
+    ))
+    conn.commit()
+    conn.close()
+
+
+def get_audit_logs(loan_id: str) -> list[dict]:
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM audit_logs WHERE loanId=? ORDER BY timestamp DESC",
+        (loan_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ─── Recommendation analytics ─────────────────────────────────────────────────
+
+def compute_recommendation_analytics() -> dict:
+    """Compute avg match score and total recs from completed denied loans."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT recommendations FROM loans WHERE decision='denied' AND recommendations != '[]'"
+    ).fetchall()
+    conn.close()
+    total = 0
+    scores = []
+    for row in rows:
+        try:
+            recs = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            for r in recs:
+                total += 1
+                scores.append(r.get("matchScore", 0))
+        except Exception:
+            pass
+    avg = round(sum(scores) / len(scores), 1) if scores else 0
+    return {"totalRecommendations": total, "avgMatchScore": avg}
 
 
 # ─── User / role helpers ──────────────────────────────────────────────────────

@@ -480,24 +480,24 @@ export default function LandingPage() {
               <div>
                  <h4 className="font-semibold text-white mb-4">Company</h4>
                  <ul className="space-y-2">
-                    <li><a href="#" className="hover:text-cyan-400">About us</a></li>
-                    <li><a href="#" className="hover:text-cyan-400">Careers</a></li>
+                    <li><Link to="/about" className="hover:text-cyan-400">About us</Link></li>
+                    <li><Link to="/contact" className="hover:text-cyan-400">Contact</Link></li>
                     <li><a href="#" className="hover:text-cyan-400">Press</a></li>
                  </ul>
               </div>
               <div>
                  <h4 className="font-semibold text-white mb-4">Product</h4>
                  <ul className="space-y-2">
-                    <li><a href="#" className="hover:text-cyan-400">How it works</a></li>
-                    <li><a href="#" className="hover:text-cyan-400">Pricing</a></li>
-                    <li><a href="#" className="hover:text-cyan-400">Privacy</a></li>
+                    <li><a href="#how-it-works" className="hover:text-cyan-400">How it works</a></li>
+                    <li><Link to="/privacy" className="hover:text-cyan-400">Privacy</Link></li>
+                    <li><Link to="/terms" className="hover:text-cyan-400">Terms</Link></li>
                  </ul>
               </div>
               <div>
                  <h4 className="font-semibold text-white mb-4">Support</h4>
                  <ul className="space-y-2">
-                    <li><a href="#" className="hover:text-cyan-400">Help Center</a></li>
-                    <li><a href="#" className="hover:text-cyan-400">Contact</a></li>
+                    <li><Link to="/contact" className="hover:text-cyan-400">Help Center</Link></li>
+                    <li><Link to="/contact" className="hover:text-cyan-400">Contact</Link></li>
                     <li><a href="#" className="hover:text-cyan-400">Status</a></li>
                  </ul>
               </div>
@@ -505,8 +505,8 @@ export default function LandingPage() {
            <div className="border-t border-white/5 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
              <p>© {new Date().getFullYear()} LoanWise AI. All rights reserved.</p>
              <div className="flex gap-6">
-                <a href="#" className="hover:text-white">Terms</a>
-                <a href="#" className="hover:text-white">Privacy Policy</a>
+                <Link to="/terms" className="hover:text-white">Terms</Link>
+                <Link to="/privacy" className="hover:text-white">Privacy Policy</Link>
              </div>
            </div>
         </div>

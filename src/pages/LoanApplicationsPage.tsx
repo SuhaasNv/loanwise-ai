@@ -7,10 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion } from "framer-motion";
+import { exportLoansCSV } from "@/lib/api/loans";
+import { toast } from "sonner";
+import { PageTitle } from "@/components/PageTitle";
 
 const PAGE_SIZE = 8;
 
@@ -31,9 +34,36 @@ export default function LoanApplicationsPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-2xl font-bold tracking-tight">Loan Applications</h1>
-        <p className="text-sm text-muted-foreground mt-1">Review and manage all loan applications</p>
+      <PageTitle title="Loan Applications" />
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Loan Applications</h1>
+          <p className="text-sm text-muted-foreground mt-1">Review and manage all loan applications</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 text-xs shrink-0"
+          onClick={async () => {
+            try {
+              const res = await exportLoansCSV({ search: search || undefined, decision: decisionFilter !== "all" ? decisionFilter : undefined });
+              if (!res.ok) throw new Error("Export failed");
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "loanwise-export.csv";
+              a.click();
+              URL.revokeObjectURL(url);
+              toast.success("Export downloaded");
+            } catch {
+              toast.error("Export failed — please try again");
+            }
+          }}
+        >
+          <Download className="h-3.5 w-3.5" />
+          Export CSV
+        </Button>
       </motion.div>
 
       <Card>

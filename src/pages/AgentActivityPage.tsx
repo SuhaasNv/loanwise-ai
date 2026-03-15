@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Search, Bot } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion } from "framer-motion";
+import { PageTitle } from "@/components/PageTitle";
 
 export default function AgentActivityPage() {
   const { data: logs, isLoading } = useAgentLogs();
@@ -25,6 +26,7 @@ export default function AgentActivityPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
+      <PageTitle title="Agent Activity" />
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-2xl font-bold tracking-tight">Agent Activity</h1>
         <p className="text-sm text-muted-foreground mt-1">Monitor AI agent decisions and actions</p>

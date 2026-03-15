@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { RoleGuard } from "@/components/RoleGuard";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 
 // Dashboard (manager) pages
@@ -22,6 +23,10 @@ import SettingsPage from "@/pages/SettingsPage";
 // Public + Customer pages
 import LandingPage from "@/pages/LandingPage";
 import ClaimManagerPage from "@/pages/ClaimManagerPage";
+import AboutPage from "@/pages/AboutPage";
+import PrivacyPage from "@/pages/PrivacyPage";
+import TermsPage from "@/pages/TermsPage";
+import ContactPage from "@/pages/ContactPage";
 import PortalLayout from "@/pages/portal/PortalLayout";
 import CustomerHomePage from "@/pages/portal/CustomerHomePage";
 import LoanApplicationFormPage from "@/pages/portal/LoanApplicationFormPage";
@@ -33,16 +38,21 @@ const App = () => (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
-        <Sonner />
-        <BrowserRouter>
+        <Sonner richColors closeButton />
+        <ErrorBoundary>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             {/* ─── Public ──────────────────────────────────────────────── */}
             <Route path="/" element={<LandingPage />} />
             <Route path="/claim-manager" element={<ClaimManagerPage />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/terms" element={<TermsPage />} />
+            <Route path="/contact" element={<ContactPage />} />
             <Route
               path="/sign-in/*"
               element={
-                <div className="flex min-h-screen items-center justify-center bg-slate-50">
+                <div className="flex min-h-screen items-center justify-center bg-[#0A0F1C]">
                   <SignIn
                     routing="path"
                     path="/sign-in"
@@ -54,7 +64,7 @@ const App = () => (
             <Route
               path="/sign-up/*"
               element={
-                <div className="flex min-h-screen items-center justify-center bg-slate-50">
+                <div className="flex min-h-screen items-center justify-center bg-[#0A0F1C]">
                   <SignUp
                     routing="path"
                     path="/sign-up"
@@ -99,6 +109,7 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
+        </ErrorBoundary>
       </TooltipProvider>
     </QueryClientProvider>
   </ThemeProvider>

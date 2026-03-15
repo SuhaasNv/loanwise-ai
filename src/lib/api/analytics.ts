@@ -44,3 +44,23 @@ export function getRejectionReasons() {
 export function getProductRecommendationStats() {
   return apiClient<ProductRecommendationPoint[]>("/analytics/product-recommendations");
 }
+
+export interface RecommendationMetrics {
+  totalRecommendations: number;
+  avgMatchScore: number;
+}
+
+export function getRecommendationMetrics() {
+  return apiClient<RecommendationMetrics>("/analytics/recommendation-metrics");
+}
+
+export function getSettings() {
+  return apiClient<Record<string, unknown>>("/settings");
+}
+
+export function saveSettings(settings: Record<string, unknown>) {
+  return apiClient<Record<string, unknown>>("/settings", {
+    method: "PUT",
+    body: JSON.stringify({ settings }),
+  });
+}

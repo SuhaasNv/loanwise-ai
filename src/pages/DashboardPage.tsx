@@ -1,4 +1,5 @@
 import { FileText, TrendingUp, Activity, Bot } from "lucide-react";
+import { PageTitle } from "@/components/PageTitle";
 import { StatCard } from "@/components/StatCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RiskMeter } from "@/components/RiskMeter";
@@ -28,6 +29,7 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
+      <PageTitle title="Dashboard" />
       <motion.div {...fadeIn}>
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-sm text-muted-foreground mt-1">Overview of your loan intelligence platform</p>

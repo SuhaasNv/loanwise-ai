@@ -4,6 +4,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Brain } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
+import { PageTitle } from "@/components/PageTitle";
 
 export default function AIDecisionsPage() {
   const { data: loans } = useLoans();
@@ -11,10 +12,19 @@ export default function AIDecisionsPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
+      <PageTitle title="AI Decisions" />
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-2xl font-bold tracking-tight">AI Decisions</h1>
         <p className="text-sm text-muted-foreground mt-1">Review all AI-powered loan decisions</p>
       </motion.div>
+
+      {decided.length === 0 && (
+        <div className="flex flex-col items-center gap-3 py-20 text-center text-muted-foreground">
+          <Brain className="h-10 w-10 text-muted-foreground/30" />
+          <p className="text-sm">No completed AI decisions yet. Process a queued loan to see results here.</p>
+          <Link to="/loans" className="text-xs text-primary hover:underline">View queued applications →</Link>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {decided.map((loan) => (
@@ -42,7 +52,12 @@ export default function AIDecisionsPage() {
                 </div>
                 <div className="flex items-center gap-1.5 pt-1 text-xs text-primary">
                   <Brain className="h-3 w-3" />
-                  <span>AI confidence: {loan.riskScore < 0.3 ? "94%" : loan.riskScore < 0.6 ? "82%" : "76%"}</span>
+                  <span>
+                    AI confidence:{" "}
+                    {loan.confidence != null && loan.confidence > 0
+                      ? `${Math.round(loan.confidence * 100)}%`
+                      : "—"}
+                  </span>
                 </div>
               </CardContent>
             </Card>

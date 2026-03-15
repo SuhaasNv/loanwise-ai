@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useUser } from "@clerk/react";
+import { PageTitle } from "@/components/PageTitle";
 import {
   PlusCircle,
   FileText,
@@ -92,6 +93,7 @@ export default function CustomerHomePage() {
 
   return (
     <div>
+      <PageTitle title="My Applications" />
       <div className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Welcome back, {firstName}</h1>

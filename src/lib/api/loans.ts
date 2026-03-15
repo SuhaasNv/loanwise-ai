@@ -1,4 +1,4 @@
-import { apiClient } from "@/lib/api-client";
+import { apiClient, apiFetch } from "@/lib/api-client";
 import type {
   Loan,
   LoanListResponse,
@@ -48,4 +48,51 @@ export function predictLoan(data: LoanPredictionRequest) {
     method: "POST",
     body: JSON.stringify(data),
   });
+}
+
+export function withdrawLoan(id: string) {
+  return apiClient<Loan>(`/loans/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "withdrawn" }),
+  });
+}
+
+export function updateManagerNotes(id: string, notes: string) {
+  return apiClient<Loan>(`/loans/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ managerNotes: notes }),
+  });
+}
+
+export function getLoanAudit(id: string) {
+  return apiClient<AuditEntry[]>(`/loans/${id}/audit`);
+}
+
+export interface AuditEntry {
+  id: string;
+  loanId: string;
+  userId: string;
+  action: string;
+  detail: string;
+  timestamp: string;
+}
+
+export function exportLoansCSV(params: { search?: string; decision?: string } = {}) {
+  const qs = new URLSearchParams({ format: "csv" });
+  if (params.search) qs.set("search", params.search);
+  if (params.decision && params.decision !== "all") qs.set("decision", params.decision);
+  return apiFetch(`/loans/export?${qs}`);
+}
+
+export function getNotifications() {
+  return apiClient<Notification[]>("/notifications");
+}
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  timestamp: string;
+  loanId?: string;
 }

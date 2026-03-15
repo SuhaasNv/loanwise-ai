@@ -585,3 +585,13 @@ def get_product_recommendations(income: float, credit_score: int) -> list[dict]:
         income, credit_score, dti=0.35, loan_amount=50000,
         loan_purpose="General", denial_factors=[],
     )
+
+
+def predict_risk(income: float, credit_score: int, loan_amount: float,
+                 dti: float, employment_type: str) -> tuple[float, float, str, float]:
+    """
+    Backward-compatible wrapper for POST /loan/predict.
+    Returns (riskScore, approvalProbability, decision, confidence).
+    """
+    result = assess_risk(income, credit_score, loan_amount, dti, employment_type, "General")
+    return result.risk_score, result.approval_probability, result.decision, result.confidence

@@ -81,7 +81,7 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="font-semibold text-sm text-foreground leading-none">Agentic</span>
+              <span className="font-semibold text-sm text-foreground leading-none">LoanWise AI</span>
               <span className="text-[10px] text-muted-foreground leading-tight mt-0.5">Loan Intelligence</span>
             </div>
           )}

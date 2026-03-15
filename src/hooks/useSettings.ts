@@ -1,4 +1,6 @@
 import { useState, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getSettings, saveSettings } from "@/lib/api/analytics";
 
 const STORAGE_KEY = "loanwise:settings";
 
@@ -21,15 +23,15 @@ export interface PlatformSettings {
   denialPrompt: string;
 }
 
-const DEFAULTS: PlatformSettings = {
+export const DEFAULTS: PlatformSettings = {
   modelProvider: "gemini",
   apiEndpoint: "https://generativelanguage.googleapis.com/v1beta",
-  temperature: 0.7,
+  temperature: 0.2,
   streamingEnabled: true,
-  riskThreshold: 60,
+  riskThreshold: 50,
   minCreditScore: 620,
   maxDti: 0.43,
-  biasThreshold: 15,
+  biasThreshold: 10,
   autoRegenerate: true,
   protectedCategoryScreening: true,
   approvalPrompt:
@@ -38,7 +40,7 @@ const DEFAULTS: PlatformSettings = {
     "Generate a respectful denial email. Explain the decision without disclosing specific model details. Suggest alternative products and provide appeal process information.",
 };
 
-function loadSettings(): PlatformSettings {
+function loadLocal(): PlatformSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULTS;
@@ -48,25 +50,53 @@ function loadSettings(): PlatformSettings {
   }
 }
 
-export function useSettings() {
-  const [settings, setSettingsState] = useState<PlatformSettings>(loadSettings);
+function saveLocal(settings: PlatformSettings) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // ignore quota / private mode errors
+  }
+}
 
-  const saveSettings = useCallback((partial: Partial<PlatformSettings>) => {
-    setSettingsState((prev) => {
-      const next = { ...prev, ...partial };
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // ignore storage errors (private mode, quota exceeded)
-      }
-      return next;
-    });
-  }, []);
+export function useSettings() {
+  const qc = useQueryClient();
+  const [localSettings, setLocalSettings] = useState<PlatformSettings>(loadLocal);
+
+  // Fetch from backend; merge over defaults
+  const { data: remoteSettings } = useQuery({
+    queryKey: ["settings"],
+    queryFn: getSettings,
+    staleTime: 60_000,
+    retry: 1,
+  });
+
+  const settings: PlatformSettings = {
+    ...DEFAULTS,
+    ...localSettings,
+    ...(remoteSettings as Partial<PlatformSettings> | undefined),
+  };
+
+  const { mutate: mutateSave } = useMutation({
+    mutationFn: (partial: Partial<PlatformSettings>) =>
+      saveSettings(partial as Record<string, unknown>),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+  });
+
+  const saveSettings_ = useCallback(
+    (partial: Partial<PlatformSettings>) => {
+      const next = { ...settings, ...partial };
+      setLocalSettings(next);
+      saveLocal(next);
+      mutateSave(partial);
+    },
+    [settings, mutateSave]
+  );
 
   const resetSettings = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
-    setSettingsState(DEFAULTS);
-  }, []);
+    setLocalSettings(DEFAULTS);
+    mutateSave(DEFAULTS);
+  }, [mutateSave]);
 
-  return { settings, saveSettings, resetSettings };
+  return { settings, saveSettings: saveSettings_, resetSettings };
 }
