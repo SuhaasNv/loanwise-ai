@@ -1,11 +1,18 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { mockRecommendations } from "@/lib/mock-data";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useProductCatalog } from "@/hooks/useProductCatalog";
+import { useProductRecommendationStats } from "@/hooks/useLoans";
 import { Gift, TrendingUp, Star } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function RecommendationsPage() {
+  const { data: catalog, isLoading: catalogLoading } = useProductCatalog();
+  const { data: stats } = useProductRecommendationStats();
+
+  const totalRecommendations = stats?.reduce((sum, s) => sum + s.count, 0) ?? 0;
+
   return (
     <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
@@ -19,7 +26,7 @@ export default function RecommendationsPage() {
             <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
               <Gift className="h-5 w-5 text-primary" />
             </div>
-            <p className="text-2xl font-bold">142</p>
+            <p className="text-2xl font-bold">{totalRecommendations || "—"}</p>
             <p className="text-xs text-muted-foreground">Total Recommendations Generated</p>
           </CardContent>
         </Card>
@@ -46,7 +53,21 @@ export default function RecommendationsPage() {
       <div>
         <h2 className="text-lg font-semibold mb-3">Available Products</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {mockRecommendations.map((rec) => (
+          {catalogLoading ? (
+            Array.from({ length: 3 }).map((_, i) => (
+              <Card key={i}>
+                <CardHeader className="pb-2">
+                  <Skeleton className="h-4 w-36" />
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Skeleton className="h-3 w-20" />
+                  <Skeleton className="h-7 w-24" />
+                  <Skeleton className="h-3 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                </CardContent>
+              </Card>
+            ))
+          ) : (catalog ?? []).map((rec) => (
             <Card key={rec.productName} className="hover:shadow-md transition-shadow">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">

@@ -1,12 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { mockAgentLogs, type AgentLog } from "@/lib/mock-data";
+import { getAgentLogs } from "@/lib/api/agents";
 
 export function useAgentLogs() {
   return useQuery({
     queryKey: ["agent-logs"],
-    queryFn: async (): Promise<AgentLog[]> => {
-      await new Promise((r) => setTimeout(r, 500));
-      return mockAgentLogs;
-    },
+    queryFn: getAgentLogs,
+    staleTime: 30 * 1000,
+    refetchInterval: 30 * 1000,
   });
 }

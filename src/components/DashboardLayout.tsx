@@ -1,14 +1,19 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
-import { Bell, Search, Sun, Moon } from "lucide-react";
+import { Bell, Search, Sun, Moon, User } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Outlet } from "react-router-dom";
-import { useTheme } from "@/hooks/useTheme";
+import { useTheme } from "next-themes";
+import { UserButton } from "@clerk/react";
+import { ApiBanner } from "@/components/ApiBanner";
+
+const devSkipAuth = import.meta.env.VITE_DEV_SKIP_AUTH === "true";
 
 export function DashboardLayout() {
-  const { theme, toggleTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
+  const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
@@ -32,11 +37,18 @@ export function DashboardLayout() {
               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
                 <Bell className="h-4 w-4" />
               </Button>
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">AD</AvatarFallback>
-              </Avatar>
+              {devSkipAuth ? (
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                    <User className="h-4 w-4" />
+                  </AvatarFallback>
+                </Avatar>
+              ) : (
+                <UserButton afterSignOutUrl="/" />
+              )}
             </div>
           </header>
+          <ApiBanner />
           <main className="flex-1 overflow-auto">
             <Outlet />
           </main>

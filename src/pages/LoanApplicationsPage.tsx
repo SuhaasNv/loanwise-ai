@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react";
-import { useLoans } from "@/hooks/useLoans";
+import { useState } from "react";
+import { usePaginatedLoans } from "@/hooks/useLoans";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RiskMeter } from "@/components/RiskMeter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -15,22 +15,19 @@ import { motion } from "framer-motion";
 const PAGE_SIZE = 8;
 
 export default function LoanApplicationsPage() {
-  const { data: loans, isLoading } = useLoans();
   const [search, setSearch] = useState("");
   const [decisionFilter, setDecisionFilter] = useState("all");
   const [page, setPage] = useState(0);
 
-  const filtered = useMemo(() => {
-    if (!loans) return [];
-    return loans.filter((l) => {
-      const matchSearch = l.applicantName.toLowerCase().includes(search.toLowerCase()) || l.id.toLowerCase().includes(search.toLowerCase());
-      const matchDecision = decisionFilter === "all" || l.decision === decisionFilter;
-      return matchSearch && matchDecision;
-    });
-  }, [loans, search, decisionFilter]);
+  const { data, isLoading } = usePaginatedLoans({
+    page: page + 1,
+    limit: PAGE_SIZE,
+    search: search || undefined,
+    decision: decisionFilter !== "all" ? decisionFilter : undefined,
+  });
 
-  const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paged = data?.items ?? [];
+  const totalPages = Math.ceil((data?.total ?? 0) / PAGE_SIZE);
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
@@ -113,7 +110,7 @@ export default function LoanApplicationsPage() {
           </Table>
           {totalPages > 1 && (
             <div className="flex items-center justify-between px-4 py-3 border-t">
-              <p className="text-xs text-muted-foreground">{filtered.length} results</p>
+              <p className="text-xs text-muted-foreground">{data?.total ?? 0} results</p>
               <div className="flex items-center gap-1">
                 <Button variant="ghost" size="icon" className="h-7 w-7" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
                   <ChevronLeft className="h-3.5 w-3.5" />

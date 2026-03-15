@@ -1,92 +1,91 @@
 import { useQuery } from "@tanstack/react-query";
+import { getLoans, getLoan, type LoanQueryParams } from "@/lib/api/loans";
 import {
-  mockLoanApplications,
-  mockDashboardStats,
-  mockApprovalTrend,
-  mockRiskDistribution,
-  mockAgentDecisionsPerHour,
-  mockRejectionReasons,
-  mockProductRecommendationStats,
-  type LoanApplication,
-} from "@/lib/mock-data";
+  getDashboardStats,
+  getApprovalTrend,
+  getRiskDistribution,
+  getAgentDecisionsPerHour,
+  getRejectionReasons,
+  getProductRecommendationStats,
+} from "@/lib/api/analytics";
 
+/** Returns a flat Loan[] — used by Dashboard and AI Decisions pages. */
 export function useLoans() {
   return useQuery({
-    queryKey: ["loans"],
-    queryFn: async (): Promise<LoanApplication[]> => {
-      // Replace with: api.loans.getAll()
-      await new Promise((r) => setTimeout(r, 500));
-      return mockLoanApplications;
-    },
+    queryKey: ["loans", "all"],
+    queryFn: () => getLoans({ page: 1, limit: 200 }),
+    select: (data) => data.items,
+    staleTime: 30 * 1000,
+  });
+}
+
+/**
+ * Server-side paginated loan query.
+ * Returns the full LoanListResponse so callers have access to total count.
+ */
+export function usePaginatedLoans(params: LoanQueryParams) {
+  const { page = 1, limit = 20, search, decision } = params;
+  return useQuery({
+    queryKey: ["loans", "paginated", page, limit, search ?? "", decision ?? "all"],
+    queryFn: () => getLoans({ page, limit, search, decision }),
+    staleTime: 30 * 1000,
+    placeholderData: (prev) => prev,
   });
 }
 
 export function useLoan(id: string) {
   return useQuery({
     queryKey: ["loan", id],
-    queryFn: async () => {
-      await new Promise((r) => setTimeout(r, 300));
-      return mockLoanApplications.find((l) => l.id === id) ?? null;
-    },
+    queryFn: () => getLoan(id),
+    enabled: !!id,
+    staleTime: 60 * 1000,
   });
 }
 
 export function useDashboardStats() {
   return useQuery({
     queryKey: ["dashboard-stats"],
-    queryFn: async () => {
-      await new Promise((r) => setTimeout(r, 400));
-      return mockDashboardStats;
-    },
+    queryFn: getDashboardStats,
+    staleTime: 2 * 60 * 1000,
   });
 }
 
 export function useApprovalTrend() {
   return useQuery({
     queryKey: ["approval-trend"],
-    queryFn: async () => {
-      await new Promise((r) => setTimeout(r, 400));
-      return mockApprovalTrend;
-    },
+    queryFn: getApprovalTrend,
+    staleTime: 5 * 60 * 1000,
   });
 }
 
 export function useRiskDistribution() {
   return useQuery({
     queryKey: ["risk-distribution"],
-    queryFn: async () => {
-      await new Promise((r) => setTimeout(r, 400));
-      return mockRiskDistribution;
-    },
+    queryFn: getRiskDistribution,
+    staleTime: 5 * 60 * 1000,
   });
 }
 
 export function useAgentDecisionsPerHour() {
   return useQuery({
     queryKey: ["agent-decisions-hour"],
-    queryFn: async () => {
-      await new Promise((r) => setTimeout(r, 400));
-      return mockAgentDecisionsPerHour;
-    },
+    queryFn: getAgentDecisionsPerHour,
+    staleTime: 2 * 60 * 1000,
   });
 }
 
 export function useRejectionReasons() {
   return useQuery({
     queryKey: ["rejection-reasons"],
-    queryFn: async () => {
-      await new Promise((r) => setTimeout(r, 400));
-      return mockRejectionReasons;
-    },
+    queryFn: getRejectionReasons,
+    staleTime: 5 * 60 * 1000,
   });
 }
 
 export function useProductRecommendationStats() {
   return useQuery({
-    queryKey: ["product-recommendations"],
-    queryFn: async () => {
-      await new Promise((r) => setTimeout(r, 400));
-      return mockProductRecommendationStats;
-    },
+    queryKey: ["product-recommendation-stats"],
+    queryFn: getProductRecommendationStats,
+    staleTime: 5 * 60 * 1000,
   });
 }
