@@ -10,7 +10,13 @@ export function WebGLShader() {
     camera: THREE.OrthographicCamera | null
     renderer: THREE.WebGLRenderer | null
     mesh: THREE.Mesh | null
-    uniforms: any
+    uniforms: {
+      resolution: { value: [number, number] }
+      time: { value: number }
+      xScale: { value: number }
+      yScale: { value: number }
+      distortion: { value: number }
+    } | null
     animationId: number | null
   }>({
     scene: null,

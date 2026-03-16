@@ -2,13 +2,13 @@ import { test, expect } from "@playwright/test";
 
 /**
  * E2E tests require the app to be running.
- * Run: npm run dev
- * Then: npx playwright test
+ * Playwright config starts the dev server automatically (webServer).
+ * Run: npm run test:e2e
  */
 
-test.describe("Dashboard", () => {
-  test("loads dashboard page", async ({ page }) => {
+test.describe("Landing page", () => {
+  test("loads landing page with LoanWise AI", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: /dashboard/i })).toBeVisible();
+    await expect(page.getByRole("banner").getByText("LoanWise AI")).toBeVisible();
   });
 });
