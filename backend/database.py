@@ -94,6 +94,15 @@ def init_db() -> None:
             timestamp   TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS recommendation_interests (
+            id          TEXT PRIMARY KEY,
+            loanId      TEXT NOT NULL,
+            productName TEXT NOT NULL,
+            userId      TEXT DEFAULT '',
+            timestamp   TEXT NOT NULL
+        )
+    """)
     conn.commit()
     # Add columns that may not exist on older DB files
     _migrate(conn)
@@ -393,6 +402,33 @@ def get_audit_logs(loan_id: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+# ─── Agent decisions by hour (from DB) ───────────────────────────────────────
+
+def compute_agent_decisions_by_hour() -> list[dict]:
+    """Compute agent log counts grouped by hour-of-day from real DB data."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT
+            CAST(strftime('%H', timestamp) AS INTEGER) AS hour_num,
+            COUNT(*) AS decisions
+        FROM agent_logs
+        GROUP BY hour_num
+        ORDER BY hour_num
+    """).fetchall()
+    conn.close()
+
+    # Map hour_num → label and count
+    hour_map = {r["hour_num"]: r["decisions"] for r in rows}
+
+    # Build a readable chart from 8AM–5PM; fill zeros for missing hours
+    labels = [
+        (8, "8AM"), (9, "9AM"), (10, "10AM"), (11, "11AM"),
+        (12, "12PM"), (13, "1PM"), (14, "2PM"), (15, "3PM"),
+        (16, "4PM"), (17, "5PM"),
+    ]
+    return [{"hour": label, "decisions": hour_map.get(h, 0)} for h, label in labels]
+
+
 # ─── Recommendation analytics ─────────────────────────────────────────────────
 
 def compute_recommendation_analytics() -> dict:
@@ -434,3 +470,58 @@ def get_user_role(user_id: str) -> str:
     row = conn.execute("SELECT role FROM users WHERE userId=?", (user_id,)).fetchone()
     conn.close()
     return row["role"] if row else "customer"
+
+
+# ─── Recommendation interest tracking ────────────────────────────────────────
+
+def track_recommendation_interest(loan_id: str, product_name: str, user_id: str = "") -> None:
+    """Record that a user expressed interest in a recommended product."""
+    import uuid
+    from datetime import datetime, timezone
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO recommendation_interests (id, loanId, productName, userId, timestamp) VALUES (?,?,?,?,?)",
+        (f"RI-{uuid.uuid4().hex[:8].upper()}", loan_id, product_name, user_id, datetime.now(timezone.utc).isoformat()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def compute_recommendation_interest_analytics() -> list[dict]:
+    """Return interest counts grouped by product name."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT productName, COUNT(*) AS clicks
+        FROM recommendation_interests
+        GROUP BY productName
+        ORDER BY clicks DESC
+    """).fetchall()
+    conn.close()
+    return [{"productName": r["productName"], "clicks": r["clicks"]} for r in rows]
+
+
+# ─── Product catalog (persisted in settings table) ────────────────────────────
+
+def get_product_catalog() -> list[dict]:
+    """Return the product catalog, falling back to data.py defaults."""
+    from data import RECOMMENDATIONS_CATALOG as DEFAULT_CATALOG
+    conn = get_db()
+    row = conn.execute("SELECT value FROM settings WHERE key='product_catalog'").fetchone()
+    conn.close()
+    if row:
+        try:
+            return json.loads(row["value"])
+        except Exception:
+            pass
+    return DEFAULT_CATALOG
+
+
+def save_product_catalog(catalog: list[dict]) -> None:
+    """Persist the product catalog to the settings table."""
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES ('product_catalog', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (json.dumps(catalog),),
+    )
+    conn.commit()
+    conn.close()

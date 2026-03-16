@@ -81,8 +81,8 @@ export async function apiFetch(
 ): Promise<Response> {
   if (USE_MOCK) {
     const mockResult = await mockApiFetch(endpoint, options);
+    // Fall through to real fetch when no mock is registered (consistent with apiClient)
     if (mockResult !== null) return mockResult;
-    throw new Error(`apiFetch: no mock registered for ${endpoint}`);
   }
   const token = _tokenGetter ? await _tokenGetter() : null;
   const { userId, role } = _userContext;

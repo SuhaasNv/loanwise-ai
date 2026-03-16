@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { withdrawLoan } from "@/lib/api/loans";
+import { withdrawLoan, expressInterest } from "@/lib/api/loans";
 import { toast } from "sonner";
 import {
   CheckCircle2,
@@ -20,6 +20,7 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  HandshakeIcon,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getLoan } from "@/lib/api/loans";
@@ -385,36 +386,97 @@ export default function ApplicationStatusPage() {
       {loan.decision === "denied" &&
         Array.isArray(loan.recommendations) &&
         loan.recommendations.length > 0 && (
-          <Card className="border-slate-200">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold text-slate-700">
-                Alternative Products for You
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 pt-0">
-              {loan.recommendations.map((rec) => (
-                <div
-                  key={rec.productName}
-                  className="rounded-xl bg-slate-50 p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <p className="font-medium text-slate-900">{rec.productName}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">{rec.description}</p>
-                      <p className="mt-1 text-xs font-semibold text-blue-600">{rec.rate}</p>
-                    </div>
-                    <Badge className="shrink-0 border-blue-200 bg-blue-50 text-blue-700">
-                      {rec.matchScore}% match
-                    </Badge>
-                  </div>
-                  {rec.reason && (
-                    <p className="mt-2 text-xs text-slate-400 border-t border-slate-200 pt-2">{rec.reason}</p>
-                  )}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+          <CustomerOffersList loanId={loan.id} recommendations={loan.recommendations} />
         )}
     </div>
+  );
+}
+
+function CustomerOffersList({
+  loanId,
+  recommendations,
+}: {
+  loanId: string;
+  recommendations: NonNullable<import("@/types/loan").Loan["recommendations"]>;
+}) {
+  const [loadingProduct, setLoadingProduct] = useState<string | null>(null);
+  const [interestSent, setInterestSent] = useState<Set<string>>(new Set());
+
+  const interestMutation = useMutation({
+    mutationFn: ({ productName }: { productName: string }) =>
+      expressInterest(loanId, productName),
+    onMutate: ({ productName }) => setLoadingProduct(productName),
+    onSettled: () => setLoadingProduct(null),
+    onSuccess: (_, { productName }) => {
+      setInterestSent((prev) => new Set(prev).add(productName));
+      toast.success("Interest recorded! A loan officer will contact you shortly.");
+    },
+    onError: () => toast.error("Failed to record interest. Please try again."),
+  });
+
+  return (
+    <Card className="border-slate-200">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold text-slate-700">
+          Alternative Products for You
+        </CardTitle>
+        <p className="text-xs text-slate-500 mt-1">
+          Based on your profile, these products may be a good fit.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-0">
+        {recommendations.map((rec) => {
+          const isPreApproved = rec.matchScore >= 85;
+          const mayQualify = rec.matchScore >= 70 && rec.matchScore < 85;
+          const sent = interestSent.has(rec.productName);
+          const isLoading = loadingProduct === rec.productName;
+          return (
+            <div key={rec.productName} className={`rounded-xl p-4 border ${isPreApproved ? "bg-emerald-50 border-emerald-200" : "bg-slate-50 border-slate-200"}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-medium text-slate-900">{rec.productName}</p>
+                    {isPreApproved && (
+                      <Badge className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-200">
+                        Pre-qualified
+                      </Badge>
+                    )}
+                    {mayQualify && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        May qualify
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-xs text-slate-500">{rec.description}</p>
+                  <p className="mt-1 text-xs font-semibold text-blue-600">{rec.rate}</p>
+                </div>
+                <Badge className="shrink-0 border-blue-200 bg-blue-50 text-blue-700">
+                  {rec.matchScore}% match
+                </Badge>
+              </div>
+              {rec.reason && (
+                <p className="mt-2 text-xs text-slate-400 border-t border-slate-200 pt-2">{rec.reason}</p>
+              )}
+              <Button
+                size="sm"
+                variant={isPreApproved ? "default" : "outline"}
+                className="w-full mt-3 text-xs gap-1.5"
+                disabled={isLoading || sent}
+                onClick={() => interestMutation.mutate({ productName: rec.productName })}
+              >
+                {isLoading ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : sent ? (
+                  <CheckCircle2 className="h-3 w-3" />
+                ) : (
+                  <HandshakeIcon className="h-3 w-3" />
+                )}
+                {sent ? "Interest Sent" : "Express Interest"}
+              </Button>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }

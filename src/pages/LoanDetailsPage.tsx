@@ -19,7 +19,7 @@ import {
   ArrowLeft, RefreshCw, Loader2, User, Brain, Mail,
   Shield, Gift, PlayCircle, ClipboardList, StickyNote, HelpCircle,
   CheckCircle, XCircle, TrendingUp, TrendingDown, Minus,
-  Zap, BrainCircuit, AlertCircle, ThumbsUp, ThumbsDown,
+  Zap, BrainCircuit, AlertCircle, ThumbsUp, ThumbsDown, HandshakeIcon,
 } from "lucide-react";
 import {
   Tooltip,
@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/tooltip";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { updateManagerNotes, getLoanAudit, type AuditEntry } from "@/lib/api/loans";
+import { updateManagerNotes, getLoanAudit, expressInterest, type AuditEntry } from "@/lib/api/loans";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AgentPipelineProgress } from "@/components/ui/agent-pipeline-progress";
 
@@ -268,6 +268,115 @@ function AiDecisionPanel({
         </div>
       </div>
     </motion.div>
+  );
+}
+
+// ─── Offers Tab ───────────────────────────────────────────────────────────────
+
+function OffersTabContent({
+  loan,
+  recsMutation,
+}: {
+  loan: NonNullable<ReturnType<typeof useLoan>["data"]>;
+  recsMutation: ReturnType<typeof useRecommendations>;
+}) {
+  const [loadingProduct, setLoadingProduct] = useState<string | null>(null);
+
+  const interestMutation = useMutation({
+    mutationFn: ({ productName }: { productName: string }) =>
+      expressInterest(loan.id, productName),
+    onMutate: ({ productName }) => setLoadingProduct(productName),
+    onSettled: () => setLoadingProduct(null),
+    onSuccess: (_, { productName }) =>
+      toast.success(`Interest in "${productName}" recorded — a loan officer will follow up.`),
+    onError: () => toast.error("Failed to record interest. Please try again."),
+  });
+
+  const recs = recsMutation.data?.recommendations ?? loan.recommendations ?? [];
+
+  if (recsMutation.isPending) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Card key={i}>
+            <CardHeader className="pb-2"><Skeleton className="h-4 w-36" /></CardHeader>
+            <CardContent className="space-y-2">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-6 w-24" />
+              <Skeleton className="h-3 w-full" />
+              <Skeleton className="h-8 w-full mt-2" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (recs.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-10 text-center text-sm text-muted-foreground">
+          No alternative products available for this application.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {recs.map((rec) => {
+        const isPreApproved = rec.matchScore >= 85;
+        const mayQualify = rec.matchScore >= 70 && rec.matchScore < 85;
+        const isLoading = loadingProduct === rec.productName;
+        return (
+          <Card
+            key={rec.productName}
+            className={`hover:shadow-md transition-shadow relative ${isPreApproved ? "ring-1 ring-emerald-400/40" : ""}`}
+          >
+            <CardHeader className="pb-2">
+              <div className="flex items-start justify-between gap-2 flex-wrap">
+                <CardTitle className="text-sm font-medium leading-tight flex-1">{rec.productName}</CardTitle>
+                <div className="flex items-center gap-1 flex-wrap justify-end">
+                  {isPreApproved && (
+                    <Badge className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-200 shrink-0">
+                      Pre-qualified
+                    </Badge>
+                  )}
+                  {mayQualify && (
+                    <Badge variant="secondary" className="text-[10px] shrink-0">
+                      May qualify
+                    </Badge>
+                  )}
+                  <Badge variant="secondary" className="text-xs shrink-0">{rec.matchScore}% match</Badge>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-xs text-muted-foreground">{rec.type}</p>
+              <p className="text-lg font-bold font-mono">{rec.rate}</p>
+              <p className="text-xs text-muted-foreground">{rec.description}</p>
+              {rec.reason && (
+                <p className="text-xs text-primary/70 border-t pt-2">{rec.reason}</p>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full text-xs gap-1.5 mt-2"
+                disabled={isLoading || interestMutation.isPending}
+                onClick={() => interestMutation.mutate({ productName: rec.productName })}
+              >
+                {isLoading ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <HandshakeIcon className="h-3 w-3" />
+                )}
+                Express Interest
+              </Button>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
   );
 }
 
@@ -703,39 +812,7 @@ export default function LoanDetailsPage() {
         </TabsContent>
 
         <TabsContent value="offers">
-          {recsMutation.isPending ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Card key={i}>
-                  <CardHeader className="pb-2"><Skeleton className="h-4 w-36" /></CardHeader>
-                  <CardContent className="space-y-2">
-                    <Skeleton className="h-3 w-20" />
-                    <Skeleton className="h-6 w-24" />
-                    <Skeleton className="h-3 w-full" />
-                    <Skeleton className="h-8 w-full mt-2" />
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(recsMutation.data?.recommendations ?? loan.recommendations ?? []).map((rec) => (
-                <Card key={rec.productName} className="hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm font-medium">{rec.productName}</CardTitle>
-                      <Badge variant="secondary" className="text-xs">{rec.matchScore}% match</Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <p className="text-xs text-muted-foreground">{rec.type}</p>
-                    <p className="text-lg font-bold font-mono">{rec.rate}</p>
-                    <p className="text-xs text-muted-foreground">{rec.description}</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+          <OffersTabContent loan={loan} recsMutation={recsMutation} />
         </TabsContent>
 
         <TabsContent value="notes">

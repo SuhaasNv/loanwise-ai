@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getSettings, saveSettings } from "@/lib/api/analytics";
+import { getSettings, saveSettings } from "@/lib/api/settings";
 
 const STORAGE_KEY = "loanwise:settings";
 
@@ -58,9 +58,18 @@ function saveLocal(settings: PlatformSettings) {
   }
 }
 
+function isEqual(a: PlatformSettings, b: PlatformSettings): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 export function useSettings() {
   const qc = useQueryClient();
-  const [localSettings, setLocalSettings] = useState<PlatformSettings>(loadLocal);
+
+  // Committed (saved) settings — merged from remote + local storage
+  const [committedSettings, setCommittedSettings] = useState<PlatformSettings>(loadLocal);
+
+  // Draft changes — local edits not yet committed to backend
+  const [draftSettings, setDraftSettings] = useState<PlatformSettings>(loadLocal);
 
   // Fetch from backend; merge over defaults
   const { data: remoteSettings } = useQuery({
@@ -70,33 +79,65 @@ export function useSettings() {
     retry: 1,
   });
 
-  const settings: PlatformSettings = {
+  const mergedCommitted: PlatformSettings = {
     ...DEFAULTS,
-    ...localSettings,
+    ...committedSettings,
     ...(remoteSettings as Partial<PlatformSettings> | undefined),
   };
 
-  const { mutate: mutateSave } = useMutation({
+  // Draft is local state; merged committed is the baseline
+  const settings: PlatformSettings = draftSettings;
+
+  const hasUnsavedChanges = !isEqual(draftSettings, mergedCommitted);
+
+  const { mutate: mutateSave, isPending: isSaving } = useMutation({
     mutationFn: (partial: Partial<PlatformSettings>) =>
       saveSettings(partial as Record<string, unknown>),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
   });
 
-  const saveSettings_ = useCallback(
+  /**
+   * Update local draft state only — does NOT auto-save to backend.
+   * Call commitSettings() to persist.
+   */
+  const updateSettings = useCallback(
     (partial: Partial<PlatformSettings>) => {
-      const next = { ...settings, ...partial };
-      setLocalSettings(next);
-      saveLocal(next);
-      mutateSave(partial);
+      setDraftSettings((prev) => ({ ...prev, ...partial }));
     },
-    [settings, mutateSave]
+    []
+  );
+
+  /**
+   * Persist the current draft to localStorage and backend.
+   */
+  const commitSettings = useCallback(
+    (sectionOverride?: Partial<PlatformSettings>) => {
+      const toSave = sectionOverride ? { ...draftSettings, ...sectionOverride } : draftSettings;
+      setCommittedSettings(toSave);
+      setDraftSettings(toSave);
+      saveLocal(toSave);
+      mutateSave(toSave);
+    },
+    [draftSettings, mutateSave]
   );
 
   const resetSettings = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
-    setLocalSettings(DEFAULTS);
+    setCommittedSettings(DEFAULTS);
+    setDraftSettings(DEFAULTS);
     mutateSave(DEFAULTS);
   }, [mutateSave]);
 
-  return { settings, saveSettings: saveSettings_, resetSettings };
+  return {
+    settings,
+    /** Update draft without saving */
+    updateSettings,
+    /** Commit draft to backend */
+    commitSettings,
+    resetSettings,
+    hasUnsavedChanges,
+    isSaving,
+    /** Legacy alias kept for backward compatibility — same as updateSettings */
+    saveSettings: updateSettings,
+  };
 }

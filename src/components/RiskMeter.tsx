@@ -32,22 +32,32 @@ export function RiskMeter({ score, size = "md", showLabel = true, className }: R
     lg: "h-3",
   };
 
+  const pct = Math.round(score * 100);
+  const label = getRiskLabel(score);
+
   return (
     <div className={cn("space-y-1", className)}>
       {showLabel && (
         <div className="flex items-center justify-between">
           <span className={cn("text-sm font-medium", getRiskColor(score))}>
-            {getRiskLabel(score)}
+            {label}
           </span>
           <span className="text-sm font-mono text-muted-foreground">
-            {(score * 100).toFixed(0)}%
+            {pct}%
           </span>
         </div>
       )}
-      <div className={cn("w-full bg-secondary rounded-full overflow-hidden", sizeClasses[size])}>
+      <div
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`Risk score: ${label} (${pct}%)`}
+        className={cn("w-full bg-secondary rounded-full overflow-hidden", sizeClasses[size])}
+      >
         <div
           className={cn("h-full rounded-full transition-all duration-500", getRiskBg(score))}
-          style={{ width: `${score * 100}%` }}
+          style={{ width: `${pct}%` }}
         />
       </div>
     </div>

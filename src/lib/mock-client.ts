@@ -11,11 +11,15 @@ import {
   mockRiskDistribution,
   mockAgentDecisionsPerHour,
   mockRecommendations,
+  mockProductCatalog,
+  mockRecommendationClicks,
   mockGeneratedEmail,
   mockRejectionReasons,
   mockProductRecommendationStats,
   type LoanApplication,
 } from "@/lib/mock-data";
+
+let _mockProductCatalog = mockProductCatalog.map((p) => ({ ...p }));
 
 function delay(ms = 400): Promise<void> {
   return new Promise((res) => setTimeout(res, ms));
@@ -251,6 +255,11 @@ export async function mockInterceptor<T>(
     } as unknown as T;
   }
 
+  // ── Recommendations catalog & interest ────────────────────────────────────
+  if (method === "POST" && path === "/recommendations/express-interest") {
+    return { success: true, message: "Interest recorded. A loan officer will follow up shortly." } as unknown as T;
+  }
+
   // ── Analytics ──────────────────────────────────────────────────────────────
   if (method === "GET" && path === "/analytics") {
     return {
@@ -284,6 +293,9 @@ export async function mockInterceptor<T>(
   if (method === "GET" && path === "/analytics/recommendation-metrics") {
     return { totalRecommendations: 45, avgMatchScore: 85 } as unknown as T;
   }
+  if (method === "GET" && path === "/analytics/recommendation-clicks") {
+    return mockRecommendationClicks as unknown as T;
+  }
 
   // ── Agents ─────────────────────────────────────────────────────────────────
   if (method === "GET" && path === "/agents/logs") {
@@ -292,7 +304,17 @@ export async function mockInterceptor<T>(
 
   // ── Recommendations catalog ────────────────────────────────────────────────
   if (method === "GET" && path === "/recommendations") {
-    return mockRecommendations as unknown as T;
+    return _mockProductCatalog as unknown as T;
+  }
+
+  // ── Settings: product catalog ──────────────────────────────────────────────
+  if (method === "GET" && path === "/settings/product-catalog") {
+    return _mockProductCatalog as unknown as T;
+  }
+  if (method === "PUT" && path === "/settings/product-catalog") {
+    const body = options?.body ? JSON.parse(options.body as string) : [];
+    _mockProductCatalog = body;
+    return { success: true } as unknown as T;
   }
 
   // Unknown route — fall through to real fetch

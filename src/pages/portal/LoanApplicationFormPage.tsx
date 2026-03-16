@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "@clerk/react";
 import { useForm } from "react-hook-form";
@@ -16,7 +16,10 @@ import {
   Pencil,
   ShieldCheck,
   AlertTriangle,
+  Save,
 } from "lucide-react";
+
+const DRAFT_STORAGE_KEY = "loanwise:loan-form-draft";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -66,10 +69,12 @@ const STEPS = [
 
 function StepIndicator({ current }: { current: number }) {
   return (
-    <div className="mb-8 flex items-center justify-center gap-0">
+    <nav aria-label="Application steps" className="mb-8 flex items-center justify-center gap-0">
       {STEPS.map((step, i) => (
         <div key={step.id} className="flex items-center">
           <div
+            aria-current={current === step.id ? "step" : undefined}
+            aria-label={`Step ${step.id}: ${step.label}${current > step.id ? " (completed)" : current === step.id ? " (current)" : ""}`}
             className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-all duration-200 ${
               current === step.id
                 ? "bg-blue-600 text-white ring-4 ring-blue-100"
@@ -100,7 +105,7 @@ function StepIndicator({ current }: { current: number }) {
           )}
         </div>
       ))}
-    </div>
+    </nav>
   );
 }
 
@@ -177,7 +182,18 @@ export default function LoanApplicationFormPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [confirmed, setConfirmed] = useState(false);
+  const [hasDraft, setHasDraft] = useState(false);
   const { mutate, isPending, error } = useCreateLoan();
+
+  // Load saved draft from localStorage
+  const savedDraft = (() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+      return raw ? (JSON.parse(raw) as Partial<FormValues>) : null;
+    } catch {
+      return null;
+    }
+  })();
 
   const {
     register,
@@ -185,15 +201,46 @@ export default function LoanApplicationFormPage() {
     getValues,
     setValue,
     trigger,
+    watch,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      applicantName: `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim(),
-      applicantEmail: user?.primaryEmailAddress?.emailAddress ?? "",
-      debtToIncomeRatio: 0.3,
+      applicantName:
+        savedDraft?.applicantName ??
+        `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim(),
+      applicantEmail:
+        savedDraft?.applicantEmail ??
+        (user?.primaryEmailAddress?.emailAddress ?? ""),
+      income: savedDraft?.income,
+      creditScore: savedDraft?.creditScore,
+      debtToIncomeRatio: savedDraft?.debtToIncomeRatio ?? 0.3,
+      loanAmount: savedDraft?.loanAmount,
+      loanPurpose: savedDraft?.loanPurpose,
+      employmentType: savedDraft?.employmentType,
     },
   });
+
+  // Track whether there's an active draft
+  useEffect(() => {
+    setHasDraft(!!localStorage.getItem(DRAFT_STORAGE_KEY));
+  }, []);
+
+  // Persist draft to localStorage
+  const persistDraft = useCallback(() => {
+    try {
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(getValues()));
+      setHasDraft(true);
+    } catch {
+      // ignore
+    }
+  }, [getValues]);
+
+  // Restore select values from draft (react-hook-form doesn't auto-restore controlled selects)
+  useEffect(() => {
+    if (savedDraft?.loanPurpose) setValue("loanPurpose", savedDraft.loanPurpose);
+    if (savedDraft?.employmentType) setValue("employmentType", savedDraft.employmentType);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function nextStep() {
     const fieldsPerStep: Record<number, (keyof FormValues)[]> = {
@@ -203,12 +250,14 @@ export default function LoanApplicationFormPage() {
     };
     const valid = await trigger(fieldsPerStep[step]);
     if (valid) {
+      persistDraft();
       setStep((s) => s + 1);
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   }
 
   function goToStep(s: number) {
+    persistDraft();
     setStep(s);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -217,7 +266,11 @@ export default function LoanApplicationFormPage() {
     mutate(
       { ...data, userId: user?.id ?? "anonymous" },
       {
-        onSuccess: (loan) => navigate(`/portal/application/${loan.id}`),
+        onSuccess: (loan) => {
+          // Clear draft on successful submit
+          try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch { /* ignore */ }
+          navigate(`/portal/application/${loan.id}`);
+        },
       }
     );
   }
@@ -640,9 +693,16 @@ export default function LoanApplicationFormPage() {
       </AnimatePresence>
 
       {/* Progress indicator */}
-      <p className="mt-4 text-center text-xs text-slate-400">
-        Step {step} of {STEPS.length} ·{" "}
-        {step < 4 ? "Your progress is saved as you move between steps" : "Ready to submit"}
+      <p className="mt-4 text-center text-xs text-slate-400 flex items-center justify-center gap-1.5">
+        Step {step} of {STEPS.length}
+        {hasDraft && step < 4 && (
+          <>
+            <span className="text-slate-300">·</span>
+            <Save className="h-3 w-3 text-emerald-500" aria-hidden="true" />
+            <span className="text-emerald-600">Draft saved</span>
+          </>
+        )}
+        {step === 4 && <><span className="text-slate-300">·</span> Ready to submit</>}
       </p>
     </div>
   );

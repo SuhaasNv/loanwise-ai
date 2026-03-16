@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import { useUser } from "@clerk/react";
 import { PageTitle } from "@/components/PageTitle";
+import { ErrorMessage } from "@/components/ErrorMessage";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 import {
   PlusCircle,
   FileText,
@@ -163,7 +165,7 @@ function LoanCard({ loan, index }: { loan: Loan; index: number }) {
 
 export default function CustomerHomePage() {
   const { user } = useUser();
-  const { data, isLoading, isError } = useMyLoans(user?.id);
+  const { data, isLoading, isError, refetch } = useMyLoans(user?.id);
 
   const loans = data?.items ?? [];
   const firstName = user?.firstName ?? "there";
@@ -207,18 +209,15 @@ export default function CustomerHomePage() {
       </motion.div>
 
       {isLoading && (
-        <div className="flex items-center justify-center py-20 text-slate-500">
-          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-          Loading your applications…
-        </div>
+        <LoadingSpinner size="lg" label="Loading your applications…" className="py-20" />
       )}
 
       {isError && (
-        <motion.div
-          {...fadeIn}
-          className="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-sm text-red-600"
-        >
-          Failed to load applications. Please try refreshing.
+        <motion.div {...fadeIn}>
+          <ErrorMessage
+            message="Failed to load your applications."
+            onRetry={() => refetch()}
+          />
         </motion.div>
       )}
 

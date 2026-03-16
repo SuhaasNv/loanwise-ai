@@ -1,10 +1,21 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLoans } from "@/hooks/useLoans";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Brain } from "lucide-react";
+import { Brain, Calendar } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { PageTitle } from "@/components/PageTitle";
+
+function formatDecisionDateTime(dateStr: string) {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return { date: "—", day: "—", time: "—" };
+  const hasTime = dateStr.includes("T");
+  return {
+    date: d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+    day: d.toLocaleDateString("en-US", { weekday: "long" }),
+    time: hasTime ? d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }) : "—",
+  };
+}
 
 export default function AIDecisionsPage() {
   const { data: loans } = useLoans();
@@ -50,6 +61,17 @@ export default function AIDecisionsPage() {
                   <span className="text-muted-foreground">Credit Score</span>
                   <span className="font-mono font-medium">{loan.creditScore}</span>
                 </div>
+                {(() => {
+                  const { date, day, time } = formatDecisionDateTime(loan.applicationDate);
+                  return (
+                    <div className="flex items-center gap-1.5 pt-1 text-xs text-muted-foreground border-t pt-3 mt-1">
+                      <Calendar className="h-3 w-3 shrink-0" />
+                      <span>
+                        {date} · {day} · {time}
+                      </span>
+                    </div>
+                  );
+                })()}
                 <div className="flex items-center gap-1.5 pt-1 text-xs text-primary">
                   <Brain className="h-3 w-3" />
                   <span>

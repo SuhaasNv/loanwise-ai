@@ -6,24 +6,35 @@ Data is persisted in SQLite (loanwise.db) via database.py.
 import csv
 import io
 import json
+import logging
 import os
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Annotated, Literal, Optional
 
 import jwt as pyjwt
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 import database as db
 from pipeline import run_pipeline
-from data import AGENT_DECISIONS, PRODUCT_RECOMMENDATIONS, RECOMMENDATIONS_CATALOG
+from data import PRODUCT_RECOMMENDATIONS, RECOMMENDATIONS_CATALOG
+
+# ─── Logging ──────────────────────────────────────────────────────────────────
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%SZ",
+)
+logger = logging.getLogger("loanwise")
 
 # ─── Rate limiter ──────────────────────────────────────────────────────────────
 
@@ -55,13 +66,18 @@ db.init_db()
 
 MANAGER_SECRET = os.getenv("MANAGER_SECRET", "loanwise-manager-2026")
 CLERK_SECRET_KEY = os.getenv("CLERK_SECRET_KEY", "")
-
-# Clerk JWKS URL for JWT verification.
-# Set to: https://<your-frontend-api>.clerk.accounts.dev/.well-known/jwks.json
-# When unset, the backend runs in dev mode and trusts X-User-Id / X-User-Role headers.
 CLERK_JWKS_URL = os.getenv("CLERK_JWKS_URL", "")
 
 _jwks_client: Optional[pyjwt.PyJWKClient] = None
+
+VALID_EMPLOYMENT_TYPES = frozenset(
+    ["Full-time", "Part-time", "Self-employed", "Contract", "Unemployed", "Retired", "Student"]
+)
+VALID_LOAN_PURPOSES = frozenset(
+    ["Home Purchase", "Refinance", "Auto", "Personal", "Business", "Education", "Medical", "Debt Consolidation", "Other"]
+)
+
+PIPELINE_MAX_RETRIES = 2
 
 
 def _get_jwks_client() -> Optional[pyjwt.PyJWKClient]:
@@ -78,20 +94,19 @@ async def startup_checks() -> None:
     if MANAGER_SECRET == "loanwise-manager-2026":
         env = os.getenv("ENVIRONMENT", "development").lower()
         if env == "production":
-            print(
-                "[ERROR] MANAGER_SECRET is using the default value in production. "
-                "Set a strong secret via the MANAGER_SECRET environment variable.",
-                file=sys.stderr,
+            logger.critical(
+                "MANAGER_SECRET is using the default value in production. "
+                "Set a strong secret via the MANAGER_SECRET environment variable."
             )
             sys.exit(1)
         else:
-            print(
-                "[WARNING] MANAGER_SECRET is using the default value. "
+            logger.warning(
+                "MANAGER_SECRET is using the default value. "
                 "Set MANAGER_SECRET before deploying to production."
             )
     if not CLERK_JWKS_URL:
-        print(
-            "[WARNING] CLERK_JWKS_URL is not set. JWT verification is disabled. "
+        logger.warning(
+            "CLERK_JWKS_URL is not set. JWT verification is disabled. "
             "The API trusts client-provided X-User-Id and X-User-Role headers. "
             "Set CLERK_JWKS_URL in production."
         )
@@ -165,13 +180,11 @@ def require_manager(
     user_id = verified_id or x_user_id
 
     if verified_id:
-        # Production path: JWT was verified — derive role from DB only
         role = db.get_user_role(verified_id)
         if role == "manager":
             return "manager"
         raise HTTPException(status_code=403, detail="Manager access required")
 
-    # Dev mode path: JWT verification is disabled — trust headers
     if x_user_role == "manager":
         return "manager"
     if user_id:
@@ -182,11 +195,20 @@ def require_manager(
     raise HTTPException(status_code=403, detail="Manager access required")
 
 
+def require_auth(
+    user_id: Optional[str] = Depends(get_user_id),
+) -> str:
+    """Require any authenticated user. Returns user_id or raises 401."""
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return user_id
+
+
 # ─── Schemas ──────────────────────────────────────────────────────────────────
 
 class CreateLoanRequest(BaseModel):
     applicantName: str
-    applicantEmail: str
+    applicantEmail: EmailStr
     userId: str
     income: float
     creditScore: int
@@ -195,6 +217,50 @@ class CreateLoanRequest(BaseModel):
     loanPurpose: str
     debtToIncomeRatio: float = 0.35
 
+    @field_validator("income")
+    @classmethod
+    def validate_income(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("income must be non-negative")
+        return v
+
+    @field_validator("creditScore")
+    @classmethod
+    def validate_credit_score(cls, v: int) -> int:
+        if not (300 <= v <= 850):
+            raise ValueError("creditScore must be between 300 and 850")
+        return v
+
+    @field_validator("loanAmount")
+    @classmethod
+    def validate_loan_amount(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("loanAmount must be positive")
+        if v > 10_000_000:
+            raise ValueError("loanAmount cannot exceed $10,000,000")
+        return v
+
+    @field_validator("debtToIncomeRatio")
+    @classmethod
+    def validate_dti(cls, v: float) -> float:
+        if not (0 <= v <= 1):
+            raise ValueError("debtToIncomeRatio must be between 0 and 1")
+        return v
+
+    @field_validator("employmentType")
+    @classmethod
+    def validate_employment_type(cls, v: str) -> str:
+        if v not in VALID_EMPLOYMENT_TYPES:
+            raise ValueError(f"employmentType must be one of: {', '.join(sorted(VALID_EMPLOYMENT_TYPES))}")
+        return v
+
+    @field_validator("loanPurpose")
+    @classmethod
+    def validate_loan_purpose(cls, v: str) -> str:
+        if v not in VALID_LOAN_PURPOSES:
+            raise ValueError(f"loanPurpose must be one of: {', '.join(sorted(VALID_LOAN_PURPOSES))}")
+        return v
+
 
 class PatchLoanRequest(BaseModel):
     status: Optional[str] = None
@@ -202,7 +268,7 @@ class PatchLoanRequest(BaseModel):
 
 
 class SubmitDecisionRequest(BaseModel):
-    decision: str  # "approved" | "denied"
+    decision: Literal["approved", "denied"]
 
 
 class LoanPredictRequest(BaseModel):
@@ -212,6 +278,34 @@ class LoanPredictRequest(BaseModel):
     employmentType: str
     loanPurpose: Optional[str] = None
     debtToIncomeRatio: Optional[float] = None
+
+    @field_validator("creditScore")
+    @classmethod
+    def validate_credit_score(cls, v: int) -> int:
+        if not (300 <= v <= 850):
+            raise ValueError("creditScore must be between 300 and 850")
+        return v
+
+    @field_validator("income")
+    @classmethod
+    def validate_income(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("income must be non-negative")
+        return v
+
+    @field_validator("loanAmount")
+    @classmethod
+    def validate_loan_amount(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("loanAmount must be positive")
+        return v
+
+    @field_validator("debtToIncomeRatio")
+    @classmethod
+    def validate_dti(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and not (0 <= v <= 1):
+            raise ValueError("debtToIncomeRatio must be between 0 and 1")
+        return v
 
 
 class LoanEmailRequest(BaseModel):
@@ -243,11 +337,43 @@ class SettingsUpdateRequest(BaseModel):
     settings: dict
 
 
+class ExpressInterestRequest(BaseModel):
+    loanId: str
+    productName: str
+
+
+class ProductCatalogItem(BaseModel):
+    productName: str
+    type: str
+    rate: str
+    description: str
+    matchScore: int
+    enabled: bool = True
+
+
 # ─── Health ───────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "2.0.0"}
+    """Deep health check: verifies DB connectivity and reports Gemini status."""
+    checks: dict = {"status": "ok", "version": "2.0.0"}
+
+    # DB connectivity
+    try:
+        conn = db.get_db()
+        conn.execute("SELECT 1").fetchone()
+        conn.close()
+        checks["database"] = "ok"
+    except Exception as exc:
+        logger.error("Health check — DB error: %s", exc)
+        checks["database"] = "error"
+        checks["status"] = "degraded"
+
+    # Gemini availability
+    google_api_key = os.getenv("GOOGLE_API_KEY", "")
+    checks["gemini"] = "configured" if google_api_key else "not_configured"
+
+    return checks
 
 
 # ─── User Setup ───────────────────────────────────────────────────────────────
@@ -262,14 +388,25 @@ def user_setup(req: UserSetupRequest):
         if req.managerSecret != MANAGER_SECRET:
             raise HTTPException(status_code=403, detail="Invalid manager secret")
     db.upsert_user_role(req.userId, "", req.role)
+    logger.info("User %s assigned role: %s", req.userId, req.role)
     return {"userId": req.userId, "role": req.role, "success": True}
 
 
 @app.get("/user/role")
-def get_user_role_endpoint(userId: str):
-    """Return the stored role for a given Clerk userId."""
-    role = db.get_user_role(userId)
-    return {"userId": userId, "role": role}
+def get_user_role_endpoint(
+    user_id: Optional[str] = Depends(get_user_id),
+    userId: Optional[str] = Query(default=None),
+):
+    """
+    Return the stored role for the authenticated user.
+    In production (JWT verified), only returns the caller's own role.
+    In dev mode, accepts ?userId= query param for convenience.
+    """
+    effective_id = user_id or userId
+    if not effective_id:
+        raise HTTPException(status_code=400, detail="userId is required")
+    role = db.get_user_role(effective_id)
+    return {"userId": effective_id, "role": role}
 
 
 @app.get("/user/setup-manager")
@@ -278,6 +415,7 @@ def setup_manager_via_url(userId: str, secret: str):
     if secret != MANAGER_SECRET:
         raise HTTPException(status_code=403, detail="Invalid secret")
     db.upsert_user_role(userId, "", "manager")
+    logger.info("Dev manager grant: userId=%s", userId)
     return {"userId": userId, "role": "manager", "success": True,
             "message": "Manager role granted. Refresh the app to apply."}
 
@@ -302,7 +440,6 @@ def get_notifications(_role: str = Depends(require_manager)):
     logs = db.get_all_agent_logs()
     recent_loans_raw, _ = db.query_loans(page=1, limit=5)
     notifications = []
-    # New applications queued
     for loan in recent_loans_raw:
         if loan["status"] == "queued":
             notifications.append({
@@ -313,7 +450,6 @@ def get_notifications(_role: str = Depends(require_manager)):
                 "timestamp": loan["applicationDate"],
                 "loanId": loan["id"],
             })
-    # Recently completed
     for loan in recent_loans_raw:
         if loan["status"] == "completed":
             notifications.append({
@@ -331,18 +467,25 @@ def get_notifications(_role: str = Depends(require_manager)):
 
 @app.post("/loans")
 @limiter.limit("20/minute")
-def create_loan(req: CreateLoanRequest, request: Request):
+def create_loan(
+    req: CreateLoanRequest,
+    request: Request,
+    user_id: Optional[str] = Depends(get_user_id),
+):
     """
     Customer submits a loan application.
+    In production (JWT verified), the userId is derived from the token.
     Saves with status='queued' and decision='pending'.
-    The AI pipeline is triggered by the manager via POST /loans/{id}/process.
     """
+    # In production, derive userId from JWT; ignore the client-supplied value.
+    effective_user_id = user_id if user_id else req.userId
+
     loan_id = f"LN-{uuid.uuid4().hex[:6].upper()}"
     application_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     loan = {
         "id": loan_id,
-        "userId": req.userId,
+        "userId": effective_user_id,
         "applicantName": req.applicantName,
         "applicantEmail": req.applicantEmail,
         "income": req.income,
@@ -365,7 +508,8 @@ def create_loan(req: CreateLoanRequest, request: Request):
     }
 
     db.insert_loan(loan)
-    db.insert_audit_log(loan_id, req.userId, "submitted", f"Application submitted for ${req.loanAmount:,.0f}")
+    db.insert_audit_log(loan_id, effective_user_id, "submitted", f"Application submitted for ${req.loanAmount:,.0f}")
+    logger.info("Loan created: %s for user %s (amount=$%.0f)", loan_id, effective_user_id, req.loanAmount)
     return loan
 
 
@@ -385,7 +529,6 @@ def patch_loan(
 
     updates = {}
     if req.status == "withdrawn":
-        # Customers can only withdraw their own queued loans
         if role != "manager" and loan.get("userId") != user_id:
             raise HTTPException(status_code=403, detail="Not your application")
         if loan["status"] == "completed":
@@ -407,42 +550,51 @@ def patch_loan(
 
 
 def _run_pipeline_bg(loan_id: str, loan: dict, user_id: str) -> None:
-    """Background task: runs AI pipeline and persists results.
+    """
+    Background task: runs AI pipeline with retry on transient failure.
     After analysis, status becomes 'pending_review' — manager must approve or deny.
     """
-    try:
-        pipeline_result = run_pipeline(
-            loan_id=loan_id,
-            income=loan["income"],
-            credit_score=loan["creditScore"],
-            loan_amount=loan["loanAmount"],
-            dti=loan["debtToIncomeRatio"],
-            employment_type=loan["employmentType"],
-            loan_purpose=loan["loanPurpose"],
-            applicant_name=loan["applicantName"],
-        )
-        ai_rec = pipeline_result["decision"]
-        updates = {
-            "riskScore": pipeline_result["riskScore"],
-            "approvalProbability": pipeline_result["approvalProbability"],
-            "aiRecommendation": ai_rec,
-            "decision": "pending",
-            "confidence": pipeline_result["confidence"],
-            "generatedEmail": pipeline_result["generatedEmail"],
-            "biasScore": pipeline_result["biasScore"],
-            "toxicityScore": pipeline_result["toxicityScore"],
-            "recommendations": json.dumps(pipeline_result["recommendations"]),
-            "factors": json.dumps(pipeline_result.get("factors", [])),
-            "status": "pending_review",
-        }
-        db.update_loan(loan_id, updates)
-        db.insert_audit_log(
-            loan_id, user_id, "processed",
-            f"AI analysis complete: recommends {ai_rec} (risk={pipeline_result['riskScore']:.2f}). Awaiting manager decision."
-        )
-    except Exception as e:
-        print(f"[bg_pipeline] Error processing {loan_id}: {e}")
-        db.update_loan(loan_id, {"status": "error"})
+    for attempt in range(1, PIPELINE_MAX_RETRIES + 1):
+        try:
+            pipeline_result = run_pipeline(
+                loan_id=loan_id,
+                income=loan["income"],
+                credit_score=loan["creditScore"],
+                loan_amount=loan["loanAmount"],
+                dti=loan["debtToIncomeRatio"],
+                employment_type=loan["employmentType"],
+                loan_purpose=loan["loanPurpose"],
+                applicant_name=loan["applicantName"],
+            )
+            ai_rec = pipeline_result["decision"]
+            updates = {
+                "riskScore": pipeline_result["riskScore"],
+                "approvalProbability": pipeline_result["approvalProbability"],
+                "aiRecommendation": ai_rec,
+                "decision": "pending",
+                "confidence": pipeline_result["confidence"],
+                "generatedEmail": pipeline_result["generatedEmail"],
+                "biasScore": pipeline_result["biasScore"],
+                "toxicityScore": pipeline_result["toxicityScore"],
+                "recommendations": json.dumps(pipeline_result["recommendations"]),
+                "factors": json.dumps(pipeline_result.get("factors", [])),
+                "status": "pending_review",
+            }
+            db.update_loan(loan_id, updates)
+            db.insert_audit_log(
+                loan_id, user_id, "processed",
+                f"AI analysis complete: recommends {ai_rec} (risk={pipeline_result['riskScore']:.2f}). Awaiting manager decision."
+            )
+            logger.info("Pipeline complete for %s (attempt %d): recommends=%s", loan_id, attempt, ai_rec)
+            return
+        except Exception as exc:
+            logger.warning("Pipeline attempt %d/%d failed for %s: %s", attempt, PIPELINE_MAX_RETRIES, loan_id, exc)
+            if attempt < PIPELINE_MAX_RETRIES:
+                time.sleep(2 ** attempt)  # exponential back-off
+
+    logger.error("Pipeline permanently failed for %s after %d attempts", loan_id, PIPELINE_MAX_RETRIES)
+    db.update_loan(loan_id, {"status": "error"})
+    db.insert_audit_log(loan_id, user_id, "error", "AI pipeline failed after retries")
 
 
 @app.post("/loans/{loan_id}/process")
@@ -455,7 +607,6 @@ def process_loan(
     """
     Manager triggers the AI pipeline for a queued loan.
     Returns immediately with status='processing'; pipeline runs in background.
-    Frontend polls /loans/{id} for completion.
     """
     loan = db.get_loan_by_id(loan_id)
     if not loan:
@@ -463,19 +614,17 @@ def process_loan(
     if loan["status"] == "completed":
         return loan
     if loan["status"] == "pending_review":
-        return loan  # Already analysed; manager must use POST /loans/{id}/decision
+        return loan
     if loan["status"] == "withdrawn":
         raise HTTPException(status_code=400, detail="Cannot process a withdrawn application")
 
-    # Mark as processing immediately
     db.update_loan(loan_id, {"status": "processing"})
     db.insert_audit_log(loan_id, user_id or "", "processing_started", "Manager started AI pipeline")
+    logger.info("Processing started for loan %s by user %s", loan_id, user_id)
 
-    # Run pipeline in background — returns 202 immediately
     background_tasks.add_task(_run_pipeline_bg, loan_id, loan, user_id or "")
 
-    loan_in_progress = db.get_loan_by_id(loan_id)
-    return loan_in_progress
+    return db.get_loan_by_id(loan_id)
 
 
 @app.post("/loans/{loan_id}/decision")
@@ -490,8 +639,6 @@ def submit_decision(
     Only available when status is 'pending_review'.
     """
     decision = req.decision.lower()
-    if decision not in ("approved", "denied"):
-        raise HTTPException(status_code=400, detail="decision must be 'approved' or 'denied'")
 
     loan = db.get_loan_by_id(loan_id)
     if not loan:
@@ -505,7 +652,6 @@ def submit_decision(
     updates = {"decision": decision, "status": "completed"}
     ai_rec = loan.get("aiRecommendation", "").lower()
 
-    # Regenerate email if manager's decision differs from AI recommendation
     if ai_rec and decision != ai_rec:
         from pipeline import generate_email_text
         new_email = generate_email_text(
@@ -519,6 +665,7 @@ def submit_decision(
         f"Manager {'approved' if decision == 'approved' else 'denied'} "
         f"(AI recommended {ai_rec or 'N/A'})"
     )
+    logger.info("Decision submitted for loan %s: %s (AI rec: %s)", loan_id, decision, ai_rec or "N/A")
     return db.get_loan_by_id(loan_id)
 
 
@@ -556,12 +703,31 @@ def list_loans(
     search: Optional[str] = None,
     decision: Optional[str] = None,
     userId: Optional[str] = None,
+    user_id: Optional[str] = Depends(get_user_id),
+    role: str = Depends(get_user_role),
 ):
+    """
+    List loans with pagination.
+    Managers can see all loans; customers only see their own.
+    """
+    # Enforce customer isolation: customers can only see their own loans
+    effective_user_id = userId
+    if role != "manager":
+        effective_user_id = user_id  # always filter by caller's own userId
+
     items, total = db.query_loans(
         page=page, limit=limit, search=search,
-        decision=decision, user_id=userId,
+        decision=decision, user_id=effective_user_id,
     )
-    return {"items": items, "total": total, "page": page, "limit": limit}
+    total_pages = max(1, (total + limit - 1) // limit)
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "totalPages": total_pages,
+        "hasNext": page < total_pages,
+    }
 
 
 @app.get("/loans/{loan_id}/audit")
@@ -571,10 +737,22 @@ def get_loan_audit(loan_id: str, _role: str = Depends(require_manager)):
 
 
 @app.get("/loans/{loan_id}")
-def get_loan(loan_id: str):
+def get_loan(
+    loan_id: str,
+    user_id: Optional[str] = Depends(get_user_id),
+    role: str = Depends(get_user_role),
+):
+    """
+    Get a single loan.
+    Customers may only access their own loans; managers can access any.
+    """
     loan = db.get_loan_by_id(loan_id)
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
+
+    if role != "manager" and loan.get("userId") and loan["userId"] != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     return loan
 
 
@@ -582,7 +760,11 @@ def get_loan(loan_id: str):
 
 @app.post("/loan/predict")
 @limiter.limit("30/minute")
-def predict_loan(req: LoanPredictRequest, request: Request):
+def predict_loan(
+    req: LoanPredictRequest,
+    request: Request,
+    _user_id: str = Depends(require_auth),
+):
     from pipeline import predict_risk
     dti = req.debtToIncomeRatio or 0.35
     risk, prob, decision, conf = predict_risk(
@@ -593,7 +775,10 @@ def predict_loan(req: LoanPredictRequest, request: Request):
 
 
 @app.post("/loan/email")
-def generate_email_endpoint(req: LoanEmailRequest):
+def generate_email_endpoint(
+    req: LoanEmailRequest,
+    _user_id: str = Depends(require_auth),
+):
     from pipeline import generate_email_text, check_bias_heuristic
     email = generate_email_text(req.applicantName, req.loanId, req.decision, req.loanAmount)
     bias, toxicity, _ = check_bias_heuristic(email)
@@ -601,7 +786,10 @@ def generate_email_endpoint(req: LoanEmailRequest):
 
 
 @app.post("/loan/bias-check")
-def check_bias(req: BiasCheckRequest):
+def check_bias(
+    req: BiasCheckRequest,
+    _user_id: str = Depends(require_auth),
+):
     from pipeline import check_bias_heuristic
     bias, toxicity, passed = check_bias_heuristic(req.email)
     return {
@@ -613,9 +801,13 @@ def check_bias(req: BiasCheckRequest):
 
 
 @app.post("/loan/recommendation")
-def get_recommendations_endpoint(req: LoanRecommendationRequest):
+def get_recommendations_endpoint(
+    req: LoanRecommendationRequest,
+    _user_id: str = Depends(require_auth),
+):
     from pipeline import get_product_recommendations
-    recs = get_product_recommendations(req.applicantIncome, req.creditScore)
+    catalog = db.get_product_catalog()
+    recs = get_product_recommendations(req.applicantIncome, req.creditScore, catalog=catalog)
     return {"recommendations": recs}
 
 
@@ -628,7 +820,7 @@ def get_analytics_bundle(_role: str = Depends(require_manager)):
         "stats": db.compute_dashboard_stats(),
         "approvalTrend": db.compute_approval_trend(),
         "riskDistribution": db.compute_risk_distribution(),
-        "agentDecisions": AGENT_DECISIONS,
+        "agentDecisions": db.compute_agent_decisions_by_hour(),
         "rejectionReasons": db.compute_rejection_reasons(),
         "productRecommendations": PRODUCT_RECOMMENDATIONS,
         "recommendationAnalytics": rec_analytics,
@@ -652,7 +844,7 @@ def get_risk_distribution(_role: str = Depends(require_manager)):
 
 @app.get("/analytics/agent-decisions")
 def get_agent_decisions(_role: str = Depends(require_manager)):
-    return AGENT_DECISIONS
+    return db.compute_agent_decisions_by_hour()
 
 
 @app.get("/analytics/rejection-reasons")
@@ -681,7 +873,40 @@ def get_agent_logs(_role: str = Depends(require_manager)):
 
 @app.get("/recommendations")
 def get_recommendations_catalog():
-    return RECOMMENDATIONS_CATALOG
+    return db.get_product_catalog()
+
+
+@app.post("/recommendations/express-interest")
+def express_interest(
+    req: ExpressInterestRequest,
+    user_id: str = Depends(require_auth),
+):
+    """Track that a user expressed interest in a recommended product."""
+    db.track_recommendation_interest(req.loanId, req.productName, user_id)
+    return {"success": True, "message": f"Interest in '{req.productName}' recorded. A loan officer will follow up shortly."}
+
+
+# ─── Settings: Product Catalog ────────────────────────────────────────────────
+
+@app.get("/settings/product-catalog")
+def get_catalog_settings(_role: str = Depends(require_manager)):
+    return db.get_product_catalog()
+
+
+@app.put("/settings/product-catalog")
+def update_catalog_settings(
+    catalog: list[ProductCatalogItem],
+    _role: str = Depends(require_manager),
+):
+    db.save_product_catalog([item.model_dump() for item in catalog])
+    return {"success": True}
+
+
+# ─── Analytics: recommendation interest ──────────────────────────────────────
+
+@app.get("/analytics/recommendation-clicks")
+def get_recommendation_clicks(_role: str = Depends(require_manager)):
+    return db.compute_recommendation_interest_analytics()
 
 
 if __name__ == "__main__":

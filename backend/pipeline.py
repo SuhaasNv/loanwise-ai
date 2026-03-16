@@ -250,10 +250,20 @@ def generate_email(
     loan_amount: float,
     factors: list[dict],
     reasoning: str,
+    recommendations: list[dict] | None = None,
 ) -> str:
     """EmailGenerator agent — writes a professional, personalised decision letter."""
     positive = [f for f in factors if f.get("impact") == "positive"]
     negative = [f for f in factors if f.get("impact") == "negative"]
+
+    recs_section = ""
+    if decision == "denied" and recommendations:
+        top_recs = recommendations[:3]
+        recs_lines = "\n".join(
+            f"  • {r['productName']} ({r['type']}) — {r['rate']}: {r['description']}"
+            for r in top_recs
+        )
+        recs_section = f"\nALTERNATIVE PRODUCTS TO RECOMMEND:\n{recs_lines}\n"
 
     prompt = f"""You are EmailGenerator, a professional loan correspondence AI at a bank.
 Write a formal, warm, and clear decision letter for this loan application.
@@ -267,13 +277,14 @@ APPLICATION DETAILS:
 
 POSITIVE FACTORS: {json.dumps(positive, indent=2)}
 NEGATIVE FACTORS: {json.dumps(negative, indent=2)}
-
+{recs_section}
 REQUIREMENTS:
 - Address the applicant by first name
 - If APPROVED: warmly congratulate, mention the specific strengths, state next steps (loan officer contact in 2 business days)
 - If DENIED: be empathetic and professional, clearly explain which factors led to the decision, mention they can re-apply in 90 days after improving those factors
+- If DENIED and alternatives are provided: include a brief "Next Best Offer" section listing the top 1-2 alternative products with their rates
 - Reference specific factor values (e.g. "your credit score of 750")
-- Keep it under 300 words
+- Keep it under 350 words
 - End with "Best regards,\nLoanwise AI Lending Platform"
 - Write plain text only, no markdown, no asterisks"""
 
@@ -281,10 +292,10 @@ REQUIREMENTS:
         return _gemini(prompt)
     except Exception as e:
         print(f"[EmailGenerator] Gemini failed ({e}), using template fallback")
-        return _fallback_email(applicant_name, loan_id, decision, loan_amount, positive, negative)
+        return _fallback_email(applicant_name, loan_id, decision, loan_amount, positive, negative, recommendations)
 
 
-def _fallback_email(name, loan_id, decision, loan_amount, positive, negative) -> str:
+def _fallback_email(name, loan_id, decision, loan_amount, positive, negative, recommendations=None) -> str:
     first = name.split()[0] if name else "Applicant"
     if decision == "approved":
         strengths = "\n".join(f"  • {f['name']}: {f['value']} — {f['detail']}" for f in positive[:3]) or "  • Strong overall financial profile"
@@ -301,6 +312,12 @@ Best regards,
 Loanwise AI Lending Platform"""
     else:
         reasons = "\n".join(f"  • {f['name']}: {f['value']} — {f['detail']}" for f in negative[:3]) or "  • Financial profile did not meet current criteria"
+        recs_block = ""
+        if recommendations:
+            top = recommendations[:2]
+            recs_block = "\n\nBased on your profile, we recommend exploring these alternative products:\n"
+            recs_block += "\n".join(f"  • {r['productName']} — {r['rate']}: {r['description']}" for r in top)
+            recs_block += "\n\nPlease log in to your portal to express interest or learn more."
         return f"""Dear {first},
 
 Thank you for your application (Reference: {loan_id}) for ${loan_amount:,.0f}.
@@ -308,7 +325,7 @@ Thank you for your application (Reference: {loan_id}) for ${loan_amount:,.0f}.
 After careful review, we are unable to approve your application at this time. The following factors contributed to this decision:
 {reasons}
 
-You are welcome to re-apply in 90 days after addressing the factors above.
+You are welcome to re-apply in 90 days after addressing the factors above.{recs_block}
 
 Best regards,
 Loanwise AI Lending Platform"""
@@ -433,6 +450,14 @@ Rules:
                 result.append(rec)
 
         result.sort(key=lambda x: x["matchScore"], reverse=True)
+
+        # Inject dynamic smaller-loan offer if DTI is the main blocker
+        dti_blocked = any(
+            "dti" in str(f.get("name", "")).lower() or "debt" in str(f.get("name", "")).lower()
+            for f in denial_factors
+        )
+        result = _inject_smaller_loan(result, income, credit_score, dti, loan_amount, dti_blocked)
+
         print(f"[ProductRecommender] Generated {len(result)} Gemini-scored recommendations")
         return result
 
@@ -444,6 +469,8 @@ Rules:
 def _fallback_recommendations(income, credit_score, dti, loan_amount) -> list[dict]:
     recs = []
     for p in RECOMMENDATIONS_CATALOG:
+        if not p.get("enabled", True):
+            continue
         rec = dict(p)
         score = p["matchScore"]
         if p["type"] == "FHA Mortgage" and credit_score >= 580 and dti <= 0.50:
@@ -452,10 +479,60 @@ def _fallback_recommendations(income, credit_score, dti, loan_amount) -> list[di
             score = min(95, score + 10)
         elif p["type"] == "Credit Card" and credit_score < 620:
             score = min(95, score + 20)
+        elif p["type"] == "Savings Plan" and credit_score < 620:
+            score = min(90, score + 12)
+        elif p["type"] == "Auto Loan" and loan_amount <= 60000 and credit_score >= 580:
+            score = min(90, score + 8)
         rec["matchScore"] = score
         rec["reason"] = f"Matched based on your profile (credit: {credit_score}, DTI: {dti*100:.0f}%)."
         recs.append(rec)
+
+    dti_blocked = dti > 0.43
+    recs = _inject_smaller_loan(recs, income, credit_score, dti, loan_amount, dti_blocked)
     return sorted(recs, key=lambda x: x["matchScore"], reverse=True)
+
+
+def _inject_smaller_loan(
+    recs: list[dict],
+    income: float,
+    credit_score: int,
+    dti: float,
+    loan_amount: float,
+    dti_blocked: bool,
+) -> list[dict]:
+    """Add a dynamic 'Reduced Amount Loan' offer when DTI is the main blocker."""
+    reduced = round(loan_amount * 0.75 / 1000) * 1000  # round to nearest $1k
+    if reduced < 5000 or reduced >= loan_amount:
+        return recs
+
+    # Estimate approximate APR based on credit score
+    if credit_score >= 740:
+        apr = 5.5
+    elif credit_score >= 670:
+        apr = 7.0
+    elif credit_score >= 620:
+        apr = 9.5
+    else:
+        apr = 12.5
+
+    # Score higher when DTI was the blocker and reduced amount would help
+    score = 88 if dti_blocked else 72
+
+    smaller_loan = {
+        "productName": f"Reduced Loan (${reduced:,.0f})",
+        "type": "Reduced Amount Loan",
+        "rate": f"{apr:.1f}% APR",
+        "description": (
+            f"A reduced loan of ${reduced:,.0f} (75% of requested) that better fits your "
+            f"current debt-to-income ratio. Strengthens your repayment profile."
+        ),
+        "matchScore": score,
+        "reason": (
+            f"Your requested loan amount would push your DTI above lender thresholds. "
+            f"A smaller loan of ${reduced:,.0f} may qualify under current guidelines."
+        ),
+    }
+    return recs + [smaller_loan]
 
 
 # ─── Logger ───────────────────────────────────────────────────────────────────
@@ -502,24 +579,7 @@ def run_pipeline(
          f"credit={credit_score}, DTI={dti*100:.0f}%, LTI={loan_amount/max(income,1):.1f}x",
          "success", risk_result.confidence)
 
-    # ── 2. EmailGenerator ──────────────────────────────────────────────────────
-    email_text = generate_email(
-        applicant_name, loan_id, risk_result.decision,
-        loan_amount, risk_result.factors, risk_result.reasoning,
-    )
-    _log("EmailGenerator", loan_id,
-         f"{'Gemini' if using_ai else 'Template'} personalised "
-         f"{'approval' if risk_result.decision == 'approved' else 'denial'} letter generated",
-         "success", 0.93)
-
-    # ── 3. BiasDetector ────────────────────────────────────────────────────────
-    bias_score, toxicity_score, bias_passed, bias_explanation = detect_bias(email_text, loan_id)
-    _log("BiasDetector", loan_id,
-         f"{'Gemini' if using_ai else 'Heuristic'} bias scan: "
-         f"bias={bias_score:.3f}, toxicity={toxicity_score:.3f}, passed={bias_passed}. {bias_explanation}",
-         "success" if bias_passed else "warning", 0.97)
-
-    # ── 4. ProductRecommender (denied only) ───────────────────────────────────
+    # ── 2. ProductRecommender (denied only — runs before email so email can include offers) ─
     recommendations = []
     if risk_result.decision == "denied":
         denial_factors = [f for f in risk_result.factors if f.get("impact") == "negative"]
@@ -529,6 +589,24 @@ def run_pipeline(
         _log("ProductRecommender", loan_id,
              f"{'Gemini' if using_ai else 'Heuristic'} scored {len(recommendations)} alternatives",
              "success", 0.88)
+
+    # ── 3. EmailGenerator ──────────────────────────────────────────────────────
+    email_text = generate_email(
+        applicant_name, loan_id, risk_result.decision,
+        loan_amount, risk_result.factors, risk_result.reasoning,
+        recommendations=recommendations if risk_result.decision == "denied" else None,
+    )
+    _log("EmailGenerator", loan_id,
+         f"{'Gemini' if using_ai else 'Template'} personalised "
+         f"{'approval' if risk_result.decision == 'approved' else 'denial'} letter generated",
+         "success", 0.93)
+
+    # ── 4. BiasDetector ────────────────────────────────────────────────────────
+    bias_score, toxicity_score, bias_passed, bias_explanation = detect_bias(email_text, loan_id)
+    _log("BiasDetector", loan_id,
+         f"{'Gemini' if using_ai else 'Heuristic'} bias scan: "
+         f"bias={bias_score:.3f}, toxicity={toxicity_score:.3f}, passed={bias_passed}. {bias_explanation}",
+         "success" if bias_passed else "warning", 0.97)
 
     print(f"[pipeline] Completed {loan_id}: {risk_result.decision}")
     return {
@@ -576,11 +654,21 @@ def check_bias_heuristic(email_text: str) -> tuple[float, float, bool]:
     return bias, toxicity, passed
 
 
-def get_product_recommendations(income: float, credit_score: int) -> list[dict]:
+def get_product_recommendations(income: float, credit_score: int, catalog: list[dict] | None = None) -> list[dict]:
     """
     Standalone recommendations (used by POST /loan/recommendation).
     Uses default DTI and loan amount for scoring.
     """
+    if catalog is not None:
+        global RECOMMENDATIONS_CATALOG
+        _orig = RECOMMENDATIONS_CATALOG
+        RECOMMENDATIONS_CATALOG = catalog
+        result = recommend_products(
+            income, credit_score, dti=0.35, loan_amount=50000,
+            loan_purpose="General", denial_factors=[],
+        )
+        RECOMMENDATIONS_CATALOG = _orig
+        return result
     return recommend_products(
         income, credit_score, dti=0.35, loan_amount=50000,
         loan_purpose="General", denial_factors=[],

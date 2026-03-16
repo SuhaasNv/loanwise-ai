@@ -5,7 +5,11 @@ import type {
   LoanPredictionRequest,
   LoanPredictionResponse,
   CreateLoanRequest,
+  AuditEntry,
+  LoanNotification,
 } from "@/types/loan";
+
+export type { AuditEntry, LoanNotification };
 
 export interface LoanQueryParams {
   page?: number;
@@ -75,15 +79,6 @@ export function getLoanAudit(id: string) {
   return apiClient<AuditEntry[]>(`/loans/${id}/audit`);
 }
 
-export interface AuditEntry {
-  id: string;
-  loanId: string;
-  userId: string;
-  action: string;
-  detail: string;
-  timestamp: string;
-}
-
 export function exportLoansCSV(params: { search?: string; decision?: string } = {}) {
   const qs = new URLSearchParams({ format: "csv" });
   if (params.search) qs.set("search", params.search);
@@ -92,14 +87,18 @@ export function exportLoansCSV(params: { search?: string; decision?: string } = 
 }
 
 export function getNotifications() {
-  return apiClient<Notification[]>("/notifications");
+  return apiClient<LoanNotification[]>("/notifications");
 }
 
-export interface Notification {
-  id: string;
-  type: string;
-  title: string;
-  body: string;
-  timestamp: string;
-  loanId?: string;
+export function expressInterest(loanId: string, productName: string) {
+  return apiClient<{ success: boolean; message: string }>("/recommendations/express-interest", {
+    method: "POST",
+    body: JSON.stringify({ loanId, productName }),
+  });
+}
+
+// LoanListResponse now includes pagination metadata
+export interface PaginatedLoanListResponse extends LoanListResponse {
+  totalPages: number;
+  hasNext: boolean;
 }

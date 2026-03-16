@@ -23,6 +23,8 @@ export interface Loan {
   loanPurpose: string;
   debtToIncomeRatio: number;
   applicationDate: string;
+  managerNotes?: string;
+  withdrawnAt?: string;
   // AI pipeline results
   aiRecommendation?: "approved" | "denied";
   generatedEmail?: string;
@@ -32,6 +34,24 @@ export interface Loan {
   confidence?: number;
   recommendations?: Recommendation[];
   factors?: RiskFactor[];
+}
+
+export interface AuditEntry {
+  id: string;
+  loanId: string;
+  userId: string;
+  action: string;
+  detail: string;
+  timestamp: string;
+}
+
+export interface LoanNotification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  timestamp: string;
+  loanId?: string;
 }
 
 export interface CreateLoanRequest {
@@ -102,4 +122,18 @@ export interface Recommendation {
 
 export interface LoanRecommendationResponse {
   recommendations: Recommendation[];
+}
+
+export interface ProductCatalogItem {
+  productName: string;
+  type: string;
+  rate: string;
+  description: string;
+  matchScore: number;
+  enabled: boolean;
+}
+
+export interface RecommendationInterestClick {
+  productName: string;
+  clicks: number;
 }

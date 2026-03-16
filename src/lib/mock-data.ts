@@ -122,8 +122,20 @@ export const mockAgentDecisionsPerHour = [
 
 export const mockRecommendations: Recommendation[] = [
   { productName: "SecureLine Personal Loan", type: "Personal Loan", rate: "7.5% APR", description: "Unsecured personal loan with flexible terms up to 60 months.", matchScore: 92 },
-  { productName: "HomeStart FHA Loan", type: "FHA Mortgage", rate: "5.8% APR", description: "Lower down payment requirement with government backing.", matchScore: 85 },
-  { productName: "CreditBuilder Card", type: "Credit Card", rate: "19.9% APR", description: "Build credit history with responsible usage and automatic reporting.", matchScore: 78 },
+  { productName: "HomeStart FHA Loan", type: "FHA Mortgage", rate: "5.8% APR", description: "Lower down payment requirement with government backing. Minimum credit score 580.", matchScore: 85 },
+  { productName: "CreditBuilder Card", type: "Credit Card", rate: "19.9% APR", description: "Build credit history with responsible usage and automatic credit bureau reporting.", matchScore: 78 },
+  { productName: "WealthGrow Savings Plan", type: "Savings Plan", rate: "4.5% APY", description: "High-yield savings account to build a stronger financial foundation before reapplying.", matchScore: 70 },
+  { productName: "AutoStart Auto Loan", type: "Auto Loan", rate: "6.9% APR", description: "Secured auto financing with flexible terms up to 72 months.", matchScore: 74 },
+];
+
+export const mockProductCatalog = mockRecommendations.map((r) => ({ ...r, enabled: true }));
+
+export const mockRecommendationClicks = [
+  { productName: "SecureLine Personal Loan", clicks: 18 },
+  { productName: "HomeStart FHA Loan", clicks: 12 },
+  { productName: "CreditBuilder Card", clicks: 9 },
+  { productName: "WealthGrow Savings Plan", clicks: 5 },
+  { productName: "AutoStart Auto Loan", clicks: 3 },
 ];
 
 export const mockGeneratedEmail = `Dear Sarah,

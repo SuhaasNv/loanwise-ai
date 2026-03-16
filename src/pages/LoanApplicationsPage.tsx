@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Search, ChevronLeft, ChevronRight, Download } from "lucide-react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion } from "framer-motion";
 import { exportLoansCSV } from "@/lib/api/loans";
@@ -18,6 +18,7 @@ import { PageTitle } from "@/components/PageTitle";
 const PAGE_SIZE = 8;
 
 export default function LoanApplicationsPage() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [decisionFilter, setDecisionFilter] = useState("all");
   const [page, setPage] = useState(0);
@@ -115,9 +116,21 @@ export default function LoanApplicationsPage() {
                 </TableRow>
               ) : (
                 paged.map((loan) => (
-                  <TableRow key={loan.id} className="cursor-pointer hover:bg-secondary/30 transition-colors">
+                  <TableRow
+                    key={loan.id}
+                    className="cursor-pointer hover:bg-secondary/30 transition-colors"
+                    onClick={() => navigate(`/loans/${loan.id}`)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        navigate(`/loans/${loan.id}`);
+                      }
+                    }}
+                  >
                     <TableCell>
-                      <Link to={`/loans/${loan.id}`} className="flex items-center gap-2">
+                      <div className="flex items-center gap-2">
                         <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-medium text-primary">
                           {loan.applicantName.split(" ").map(n => n[0]).join("")}
                         </div>
@@ -125,7 +138,7 @@ export default function LoanApplicationsPage() {
                           <p className="text-sm font-medium">{loan.applicantName}</p>
                           <p className="text-xs text-muted-foreground font-mono">{loan.id}</p>
                         </div>
-                      </Link>
+                      </div>
                     </TableCell>
                     <TableCell className="text-sm font-mono">${loan.income.toLocaleString()}</TableCell>
                     <TableCell className="text-sm font-mono">{loan.creditScore}</TableCell>

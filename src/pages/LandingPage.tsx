@@ -52,9 +52,15 @@ export default function LandingPage() {
               Features
             </a>
           </nav>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" className="hidden text-slate-300 hover:bg-white/5 hover:text-white sm:inline-flex" asChild>
               <Link to="/sign-in">Manager Login</Link>
+            </Button>
+            <Button variant="ghost" size="sm" className="hidden text-slate-400 hover:bg-white/5 hover:text-cyan-400 sm:inline-flex" asChild>
+              <Link to="/claim-manager">
+                <Lock className="mr-1.5 h-3.5 w-3.5" />
+                Claim Manager
+              </Link>
             </Button>
             <Button size="sm" className="rounded-full bg-cyan-500 px-6 text-[#0A0F1C] hover:bg-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]" asChild>
               <Link to="/sign-up">

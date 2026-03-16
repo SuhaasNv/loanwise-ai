@@ -102,6 +102,9 @@ export function AgentPipelineProgress({
 
   return (
     <div
+      role="region"
+      aria-label="AI pipeline progress"
+      aria-busy={isRunning}
       className={cn(
         "rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50/40 p-5 space-y-4",
         className
@@ -132,24 +135,33 @@ export function AgentPipelineProgress({
       </div>
 
       {/* Overall bar */}
-      <div className="relative h-3 w-full overflow-hidden rounded-full bg-blue-100">
+      <div
+        role="progressbar"
+        aria-valuenow={Math.round(overallPct)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`Overall pipeline progress: ${Math.round(overallPct)}%`}
+        className="relative h-3 w-full overflow-hidden rounded-full bg-blue-100"
+      >
+        {/* Fill — only transition width, never the gradient background */}
         <div
           className={cn(
-            "h-full rounded-full transition-all",
+            "h-full rounded-full",
             complete
-              ? "bg-gradient-to-r from-emerald-400 to-emerald-500 duration-700"
-              : "bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500 duration-[250ms]"
+              ? "bg-gradient-to-r from-emerald-400 to-emerald-500"
+              : "bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500"
           )}
-          style={{ width: `${overallPct}%` }}
+          style={{
+            width: `${overallPct}%`,
+            transition: complete ? "width 700ms ease-out" : "width 120ms linear",
+          }}
         />
-        {/* Shimmer while running */}
-        {!complete && (
+        {/* Shimmer highlight — rendered as a sibling, NOT over the fill */}
+        {!complete && overallPct > 0 && (
           <div
-            className="absolute inset-0 rounded-full overflow-hidden pointer-events-none"
-            style={{ width: `${overallPct}%` }}
-          >
-            <div className="absolute inset-0 animate-shimmer bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full" />
-          </div>
+            className="pointer-events-none absolute top-0 h-full animate-shimmer bg-gradient-to-r from-transparent via-white/40 to-transparent"
+            style={{ width: `${overallPct}%`, left: 0 }}
+          />
         )}
       </div>
 

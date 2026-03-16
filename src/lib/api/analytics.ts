@@ -55,13 +55,14 @@ export function getRecommendationMetrics() {
   return apiClient<RecommendationMetrics>("/analytics/recommendation-metrics");
 }
 
-export function getSettings() {
-  return apiClient<Record<string, unknown>>("/settings");
+export interface RecommendationClickPoint {
+  productName: string;
+  clicks: number;
 }
 
-export function saveSettings(settings: Record<string, unknown>) {
-  return apiClient<Record<string, unknown>>("/settings", {
-    method: "PUT",
-    body: JSON.stringify({ settings }),
-  });
+export function getRecommendationClicks() {
+  return apiClient<RecommendationClickPoint[]>("/analytics/recommendation-clicks");
 }
+
+// Settings helpers have moved to @/lib/api/settings.ts
+export { getSettings, saveSettings } from "@/lib/api/settings";
