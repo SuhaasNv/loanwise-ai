@@ -1,5 +1,5 @@
 export type LoanDecision = "approved" | "denied" | "pending" | "review";
-export type LoanStatus = "completed" | "in_progress" | "queued";
+export type LoanStatus = "completed" | "in_progress" | "queued" | "pending_review" | "processing" | "withdrawn";
 
 export interface LoanListResponse {
   items: Loan[];
@@ -24,6 +24,7 @@ export interface Loan {
   debtToIncomeRatio: number;
   applicationDate: string;
   // AI pipeline results
+  aiRecommendation?: "approved" | "denied";
   generatedEmail?: string;
   biasScore?: number;
   toxicityScore?: number;

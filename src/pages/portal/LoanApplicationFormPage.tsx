@@ -13,6 +13,9 @@ import {
   ChevronRight,
   ChevronLeft,
   Loader2,
+  Pencil,
+  ShieldCheck,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +28,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 import { useCreateLoan } from "@/hooks/useCreateLoan";
+import { motion, AnimatePresence } from "framer-motion";
 
 // ─── Zod schema ───────────────────────────────────────────────────────────────
 
@@ -54,7 +61,7 @@ const STEPS = [
   { id: 1, label: "Personal", icon: User },
   { id: 2, label: "Financial", icon: CreditCard },
   { id: 3, label: "Loan Details", icon: DollarSign },
-  { id: 4, label: "Review", icon: ClipboardList },
+  { id: 4, label: "Review & Submit", icon: ClipboardList },
 ];
 
 function StepIndicator({ current }: { current: number }) {
@@ -63,9 +70,9 @@ function StepIndicator({ current }: { current: number }) {
       {STEPS.map((step, i) => (
         <div key={step.id} className="flex items-center">
           <div
-            className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
+            className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-all duration-200 ${
               current === step.id
-                ? "bg-blue-600 text-white"
+                ? "bg-blue-600 text-white ring-4 ring-blue-100"
                 : current > step.id
                 ? "bg-emerald-500 text-white"
                 : "bg-slate-100 text-slate-400"
@@ -74,15 +81,19 @@ function StepIndicator({ current }: { current: number }) {
             {current > step.id ? <CheckCircle2 className="h-4 w-4" /> : step.id}
           </div>
           <span
-            className={`ml-2 mr-1 hidden text-sm font-medium sm:block ${
-              current === step.id ? "text-blue-700" : "text-slate-400"
+            className={`ml-2 mr-1 hidden text-sm font-medium sm:block transition-colors ${
+              current === step.id
+                ? "text-blue-700"
+                : current > step.id
+                ? "text-emerald-600"
+                : "text-slate-400"
             }`}
           >
             {step.label}
           </span>
           {i < STEPS.length - 1 && (
             <div
-              className={`mx-2 h-0.5 w-8 sm:w-16 ${
+              className={`mx-2 h-0.5 w-8 sm:w-12 transition-colors duration-300 ${
                 current > step.id ? "bg-emerald-400" : "bg-slate-200"
               }`}
             />
@@ -97,18 +108,64 @@ function StepIndicator({ current }: { current: number }) {
 
 function Field({
   label,
+  hint,
   error,
   children,
 }: {
   label: string;
+  hint?: string;
   error?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm font-medium text-slate-700">{label}</Label>
+      <div className="flex items-baseline justify-between">
+        <Label className="text-sm font-medium text-slate-700">{label}</Label>
+        {hint && <span className="text-xs text-slate-400">{hint}</span>}
+      </div>
       {children}
       {error && <p className="text-xs text-red-500">{error}</p>}
+    </div>
+  );
+}
+
+// ─── Review section ───────────────────────────────────────────────────────────
+
+function ReviewSection({
+  title,
+  step,
+  onEdit,
+  rows,
+}: {
+  title: string;
+  step: number;
+  onEdit: (s: number) => void;
+  rows: { label: string; value: React.ReactNode }[];
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/60 overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-100">
+        <span className="text-sm font-semibold text-slate-800">{title}</span>
+        <button
+          type="button"
+          onClick={() => onEdit(step)}
+          className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors"
+        >
+          <Pencil className="h-3 w-3" />
+          Edit
+        </button>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {rows.map(({ label, value }) => (
+          <div
+            key={label}
+            className="flex items-center justify-between px-4 py-2.5 text-sm"
+          >
+            <span className="text-slate-500">{label}</span>
+            <span className="font-medium text-slate-900 text-right">{value}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -119,6 +176,7 @@ export default function LoanApplicationFormPage() {
   const { user } = useUser();
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
+  const [confirmed, setConfirmed] = useState(false);
   const { mutate, isPending, error } = useCreateLoan();
 
   const {
@@ -144,245 +202,448 @@ export default function LoanApplicationFormPage() {
       3: ["loanAmount", "loanPurpose", "employmentType"],
     };
     const valid = await trigger(fieldsPerStep[step]);
-    if (valid) setStep((s) => s + 1);
+    if (valid) {
+      setStep((s) => s + 1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
+  function goToStep(s: number) {
+    setStep(s);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function onSubmit(data: FormValues) {
     mutate(
+      { ...data, userId: user?.id ?? "anonymous" },
       {
-        ...data,
-        userId: user?.id ?? "anonymous",
-      },
-      {
-        onSuccess: (loan) => {
-          navigate(`/portal/application/${loan.id}`);
-        },
+        onSuccess: (loan) => navigate(`/portal/application/${loan.id}`),
       }
     );
   }
 
   const vals = getValues();
 
+  const dtiPercent =
+    vals.debtToIncomeRatio != null
+      ? `${(Number(vals.debtToIncomeRatio) * 100).toFixed(0)}%`
+      : "—";
+
+  const dtiRisk =
+    Number(vals.debtToIncomeRatio) > 0.43
+      ? "high"
+      : Number(vals.debtToIncomeRatio) > 0.35
+      ? "moderate"
+      : "good";
+
+  const creditRisk =
+    Number(vals.creditScore) >= 740
+      ? "excellent"
+      : Number(vals.creditScore) >= 670
+      ? "good"
+      : Number(vals.creditScore) >= 580
+      ? "fair"
+      : "poor";
+
   return (
     <div className="mx-auto max-w-xl">
       <div className="mb-6 text-center">
         <h1 className="text-2xl font-bold text-slate-900">Loan Application</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Fill in your details and get an AI-powered decision instantly.
+          Fill in your details and get an AI-powered decision in minutes.
         </p>
       </div>
 
       <StepIndicator current={step} />
 
-      <Card className="border-slate-200 shadow-sm">
-        <CardHeader className="border-b border-slate-100 pb-4">
-          <CardTitle className="flex items-center gap-2 text-base">
-            {(() => {
-              const s = STEPS[step - 1];
-              const Icon = s.icon;
-              return (
-                <>
-                  <Icon className="h-4 w-4 text-blue-600" />
-                  {s.label}
-                </>
-              );
-            })()}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <form onSubmit={handleSubmit(onSubmit)}>
-            {/* Step 1 — Personal */}
-            {step === 1 && (
-              <div className="space-y-4">
-                <Field label="Full Name" error={errors.applicantName?.message}>
-                  <Input
-                    {...register("applicantName")}
-                    placeholder="Jane Doe"
-                    className={errors.applicantName ? "border-red-400" : ""}
-                  />
-                </Field>
-                <Field label="Email Address" error={errors.applicantEmail?.message}>
-                  <Input
-                    {...register("applicantEmail")}
-                    type="email"
-                    placeholder="jane@example.com"
-                    className={errors.applicantEmail ? "border-red-400" : ""}
-                  />
-                </Field>
-              </div>
-            )}
-
-            {/* Step 2 — Financial */}
-            {step === 2 && (
-              <div className="space-y-4">
-                <Field label="Annual Income ($)" error={errors.income?.message}>
-                  <Input
-                    {...register("income")}
-                    type="number"
-                    placeholder="85000"
-                    className={errors.income ? "border-red-400" : ""}
-                  />
-                </Field>
-                <Field
-                  label="Credit Score (300–850)"
-                  error={errors.creditScore?.message}
-                >
-                  <Input
-                    {...register("creditScore")}
-                    type="number"
-                    placeholder="720"
-                    min={300}
-                    max={850}
-                    className={errors.creditScore ? "border-red-400" : ""}
-                  />
-                </Field>
-                <Field
-                  label="Debt-to-Income Ratio (0.00–1.00)"
-                  error={errors.debtToIncomeRatio?.message}
-                >
-                  <Input
-                    {...register("debtToIncomeRatio")}
-                    type="number"
-                    step="0.01"
-                    placeholder="0.30"
-                    min={0}
-                    max={1}
-                    className={errors.debtToIncomeRatio ? "border-red-400" : ""}
-                  />
-                </Field>
-              </div>
-            )}
-
-            {/* Step 3 — Loan */}
-            {step === 3 && (
-              <div className="space-y-4">
-                <Field label="Loan Amount ($)" error={errors.loanAmount?.message}>
-                  <Input
-                    {...register("loanAmount")}
-                    type="number"
-                    placeholder="150000"
-                    className={errors.loanAmount ? "border-red-400" : ""}
-                  />
-                </Field>
-                <Field label="Loan Purpose" error={errors.loanPurpose?.message}>
-                  <Select
-                    onValueChange={(v) => setValue("loanPurpose", v, { shouldValidate: true })}
-                    defaultValue={vals.loanPurpose}
-                  >
-                    <SelectTrigger className={errors.loanPurpose ? "border-red-400" : ""}>
-                      <SelectValue placeholder="Select purpose…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[
-                        "Home Purchase",
-                        "Refinance",
-                        "Business",
-                        "Personal",
-                        "Auto",
-                        "Education",
-                        "Debt Consolidation",
-                      ].map((p) => (
-                        <SelectItem key={p} value={p}>
-                          {p}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label="Employment Type" error={errors.employmentType?.message}>
-                  <Select
-                    onValueChange={(v) => setValue("employmentType", v, { shouldValidate: true })}
-                    defaultValue={vals.employmentType}
-                  >
-                    <SelectTrigger className={errors.employmentType ? "border-red-400" : ""}>
-                      <SelectValue placeholder="Select type…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {["Full-time", "Part-time", "Self-employed", "Contract", "Unemployed"].map(
-                        (t) => (
-                          <SelectItem key={t} value={t}>
-                            {t}
-                          </SelectItem>
-                        )
-                      )}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-            )}
-
-            {/* Step 4 — Review */}
-            {step === 4 && (
-              <div className="space-y-3">
-                {[
-                  ["Full Name", vals.applicantName],
-                  ["Email", vals.applicantEmail],
-                  ["Annual Income", `$${Number(vals.income).toLocaleString()}`],
-                  ["Credit Score", vals.creditScore],
-                  ["DTI Ratio", vals.debtToIncomeRatio],
-                  ["Loan Amount", `$${Number(vals.loanAmount).toLocaleString()}`],
-                  ["Loan Purpose", vals.loanPurpose],
-                  ["Employment Type", vals.employmentType],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2.5 text-sm"
-                  >
-                    <span className="text-slate-500">{label}</span>
-                    <span className="font-medium text-slate-900">{value}</span>
-                  </div>
-                ))}
-                {error && (
-                  <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-                    {(error as Error).message || "Submission failed. Please try again."}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={step}
+          initial={{ opacity: 0, x: 16 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -16 }}
+          transition={{ duration: 0.2 }}
+        >
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="border-b border-slate-100 pb-4">
+              <CardTitle className="flex items-center gap-2 text-base">
+                {(() => {
+                  const s = STEPS[step - 1];
+                  const Icon = s.icon;
+                  return (
+                    <>
+                      <Icon className="h-4 w-4 text-blue-600" />
+                      {s.label}
+                    </>
+                  );
+                })()}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <form onSubmit={handleSubmit(onSubmit)}>
+                {/* Step 1 — Personal */}
+                {step === 1 && (
+                  <div className="space-y-4">
+                    <Field label="Full Name" error={errors.applicantName?.message}>
+                      <Input
+                        {...register("applicantName")}
+                        placeholder="Jane Doe"
+                        className={errors.applicantName ? "border-red-400" : ""}
+                      />
+                    </Field>
+                    <Field label="Email Address" error={errors.applicantEmail?.message}>
+                      <Input
+                        {...register("applicantEmail")}
+                        type="email"
+                        placeholder="jane@example.com"
+                        className={errors.applicantEmail ? "border-red-400" : ""}
+                      />
+                    </Field>
                   </div>
                 )}
-              </div>
-            )}
 
-            {/* Navigation */}
-            <div className="mt-6 flex justify-between">
-              {step > 1 ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setStep((s) => s - 1)}
-                >
-                  <ChevronLeft className="mr-1 h-4 w-4" />
-                  Back
-                </Button>
-              ) : (
-                <div />
-              )}
+                {/* Step 2 — Financial */}
+                {step === 2 && (
+                  <div className="space-y-4">
+                    <Field
+                      label="Annual Income"
+                      hint="before taxes"
+                      error={errors.income?.message}
+                    >
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                        <Input
+                          {...register("income")}
+                          type="number"
+                          placeholder="85,000"
+                          className={`pl-7 ${errors.income ? "border-red-400" : ""}`}
+                        />
+                      </div>
+                    </Field>
+                    <Field
+                      label="Credit Score"
+                      hint="300 – 850"
+                      error={errors.creditScore?.message}
+                    >
+                      <Input
+                        {...register("creditScore")}
+                        type="number"
+                        placeholder="720"
+                        min={300}
+                        max={850}
+                        className={errors.creditScore ? "border-red-400" : ""}
+                      />
+                    </Field>
+                    <Field
+                      label="Debt-to-Income Ratio"
+                      hint="monthly debt ÷ gross income"
+                      error={errors.debtToIncomeRatio?.message}
+                    >
+                      <Input
+                        {...register("debtToIncomeRatio")}
+                        type="number"
+                        step="0.01"
+                        placeholder="0.30"
+                        min={0}
+                        max={1}
+                        className={errors.debtToIncomeRatio ? "border-red-400" : ""}
+                      />
+                    </Field>
+                    <p className="text-xs text-slate-400">
+                      Tip: a DTI below 36% is generally considered healthy by lenders.
+                    </p>
+                  </div>
+                )}
 
-              {step < 4 ? (
-                <Button type="button" onClick={nextStep} className="bg-blue-600 hover:bg-blue-700">
-                  Next
-                  <ChevronRight className="ml-1 h-4 w-4" />
-                </Button>
-              ) : (
-                <Button
-                  type="submit"
-                  className="bg-blue-600 hover:bg-blue-700"
-                  disabled={isPending}
-                >
-                  {isPending ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Submitting…
-                    </>
+                {/* Step 3 — Loan */}
+                {step === 3 && (
+                  <div className="space-y-4">
+                    <Field
+                      label="Loan Amount"
+                      error={errors.loanAmount?.message}
+                    >
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                        <Input
+                          {...register("loanAmount")}
+                          type="number"
+                          placeholder="150,000"
+                          className={`pl-7 ${errors.loanAmount ? "border-red-400" : ""}`}
+                        />
+                      </div>
+                    </Field>
+                    <Field label="Loan Purpose" error={errors.loanPurpose?.message}>
+                      <Select
+                        onValueChange={(v) =>
+                          setValue("loanPurpose", v, { shouldValidate: true })
+                        }
+                        defaultValue={vals.loanPurpose}
+                      >
+                        <SelectTrigger
+                          className={errors.loanPurpose ? "border-red-400" : ""}
+                        >
+                          <SelectValue placeholder="Select purpose…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[
+                            "Home Purchase",
+                            "Refinance",
+                            "Business",
+                            "Personal",
+                            "Auto",
+                            "Education",
+                            "Debt Consolidation",
+                          ].map((p) => (
+                            <SelectItem key={p} value={p}>
+                              {p}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field
+                      label="Employment Type"
+                      error={errors.employmentType?.message}
+                    >
+                      <Select
+                        onValueChange={(v) =>
+                          setValue("employmentType", v, { shouldValidate: true })
+                        }
+                        defaultValue={vals.employmentType}
+                      >
+                        <SelectTrigger
+                          className={errors.employmentType ? "border-red-400" : ""}
+                        >
+                          <SelectValue placeholder="Select type…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[
+                            "Full-time",
+                            "Part-time",
+                            "Self-employed",
+                            "Contract",
+                            "Unemployed",
+                          ].map((t) => (
+                            <SelectItem key={t} value={t}>
+                              {t}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  </div>
+                )}
+
+                {/* Step 4 — Review & Submit */}
+                {step === 4 && (
+                  <div className="space-y-5">
+                    <div className="rounded-lg border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-blue-800 flex items-start gap-2.5">
+                      <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-blue-500" />
+                      <p>
+                        Please review your application details carefully. You can edit any
+                        section before submitting. Once submitted, changes cannot be made.
+                      </p>
+                    </div>
+
+                    <ReviewSection
+                      title="Personal Information"
+                      step={1}
+                      onEdit={goToStep}
+                      rows={[
+                        { label: "Full Name", value: vals.applicantName || "—" },
+                        { label: "Email Address", value: vals.applicantEmail || "—" },
+                      ]}
+                    />
+
+                    <ReviewSection
+                      title="Financial Profile"
+                      step={2}
+                      onEdit={goToStep}
+                      rows={[
+                        {
+                          label: "Annual Income",
+                          value: vals.income
+                            ? `$${Number(vals.income).toLocaleString()}`
+                            : "—",
+                        },
+                        {
+                          label: "Credit Score",
+                          value: vals.creditScore ? (
+                            <span className="flex items-center gap-2">
+                              {vals.creditScore}
+                              <Badge
+                                className={`text-xs ${
+                                  creditRisk === "excellent"
+                                    ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                                    : creditRisk === "good"
+                                    ? "bg-blue-100 text-blue-700 border-blue-200"
+                                    : creditRisk === "fair"
+                                    ? "bg-amber-100 text-amber-700 border-amber-200"
+                                    : "bg-red-100 text-red-700 border-red-200"
+                                }`}
+                              >
+                                {creditRisk}
+                              </Badge>
+                            </span>
+                          ) : (
+                            "—"
+                          ),
+                        },
+                        {
+                          label: "Debt-to-Income Ratio",
+                          value: vals.debtToIncomeRatio ? (
+                            <span className="flex items-center gap-2">
+                              {dtiPercent}
+                              <Badge
+                                className={`text-xs ${
+                                  dtiRisk === "good"
+                                    ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                                    : dtiRisk === "moderate"
+                                    ? "bg-amber-100 text-amber-700 border-amber-200"
+                                    : "bg-red-100 text-red-700 border-red-200"
+                                }`}
+                              >
+                                {dtiRisk === "good"
+                                  ? "healthy"
+                                  : dtiRisk === "moderate"
+                                  ? "moderate"
+                                  : "high"}
+                              </Badge>
+                            </span>
+                          ) : (
+                            "—"
+                          ),
+                        },
+                      ]}
+                    />
+
+                    <ReviewSection
+                      title="Loan Details"
+                      step={3}
+                      onEdit={goToStep}
+                      rows={[
+                        {
+                          label: "Loan Amount",
+                          value: vals.loanAmount
+                            ? `$${Number(vals.loanAmount).toLocaleString()}`
+                            : "—",
+                        },
+                        { label: "Purpose", value: vals.loanPurpose || "—" },
+                        { label: "Employment Type", value: vals.employmentType || "—" },
+                      ]}
+                    />
+
+                    <Separator />
+
+                    {/* Confirmation */}
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                      <p className="text-sm font-semibold text-slate-800">
+                        Confirm & Submit
+                      </p>
+                      <label className="flex items-start gap-3 cursor-pointer group">
+                        <Checkbox
+                          id="confirm"
+                          checked={confirmed}
+                          onCheckedChange={(v) => setConfirmed(!!v)}
+                          className="mt-0.5"
+                        />
+                        <span className="text-sm text-slate-600 leading-relaxed">
+                          I confirm that the information provided is accurate and complete.
+                          I understand this application will be reviewed by an AI system and a
+                          loan officer. I agree to the{" "}
+                          <a
+                            href="/terms"
+                            className="text-blue-600 hover:underline"
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Terms of Service
+                          </a>{" "}
+                          and{" "}
+                          <a
+                            href="/privacy"
+                            className="text-blue-600 hover:underline"
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Privacy Policy
+                          </a>
+                          .
+                        </span>
+                      </label>
+                    </div>
+
+                    {!confirmed && (
+                      <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                        Please check the confirmation box to submit your application.
+                      </div>
+                    )}
+
+                    {error && (
+                      <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                        {(error as Error).message ||
+                          "Submission failed. Please try again."}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Navigation */}
+                <div className="mt-6 flex justify-between items-center">
+                  {step > 1 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => goToStep(step - 1)}
+                    >
+                      <ChevronLeft className="mr-1 h-4 w-4" />
+                      Back
+                    </Button>
                   ) : (
-                    <>
-                      <CheckCircle2 className="mr-2 h-4 w-4" />
-                      Submit Application
-                    </>
+                    <div />
                   )}
-                </Button>
-              )}
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+
+                  {step < 4 ? (
+                    <Button
+                      type="button"
+                      onClick={nextStep}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      Next
+                      <ChevronRight className="ml-1 h-4 w-4" />
+                    </Button>
+                  ) : (
+                    <Button
+                      type="submit"
+                      className="bg-blue-600 hover:bg-blue-700 min-w-[160px]"
+                      disabled={isPending || !confirmed}
+                    >
+                      {isPending ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Submitting…
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          Submit Application
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </AnimatePresence>
+
+      {/* Progress indicator */}
+      <p className="mt-4 text-center text-xs text-slate-400">
+        Step {step} of {STEPS.length} ·{" "}
+        {step < 4 ? "Your progress is saved as you move between steps" : "Ready to submit"}
+      </p>
     </div>
   );
 }

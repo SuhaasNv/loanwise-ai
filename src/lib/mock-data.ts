@@ -3,16 +3,27 @@
 export interface LoanApplication {
   id: string;
   applicantName: string;
+  applicantEmail?: string;
+  userId?: string;
   income: number;
   creditScore: number;
   loanAmount: number;
   riskScore: number;
   decision: "approved" | "denied" | "pending" | "review";
-  status: "completed" | "in_progress" | "queued";
+  status: "completed" | "in_progress" | "queued" | "processing" | "pending_review" | "withdrawn";
+  aiRecommendation?: "approved" | "denied";
   employmentType: string;
   loanPurpose: string;
   debtToIncomeRatio: number;
   applicationDate: string;
+  generatedEmail?: string;
+  biasScore?: number;
+  toxicityScore?: number;
+  approvalProbability?: number;
+  confidence?: number;
+  recommendations?: unknown[];
+  factors?: unknown[];
+  managerNotes?: string;
 }
 
 export interface AgentLog {

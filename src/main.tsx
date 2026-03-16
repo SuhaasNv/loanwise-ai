@@ -6,7 +6,7 @@ import {
   useUser,
 } from "@clerk/react";
 import { Loader2 } from "lucide-react";
-import { setTokenGetter, setUserContext } from "@/lib/api-client";
+import { setTokenGetter, setUserContext, API_BASE } from "@/lib/api-client";
 import App from "./App.tsx";
 import "./index.css";
 
@@ -91,7 +91,7 @@ function AuthTokenSync() {
     setUserContext({ userId: user.id });
 
     // Fetch the backend role and inject it into every subsequent request
-    fetch(`${import.meta.env.VITE_API_URL ?? ""}/user/role?userId=${user.id}`)
+    fetch(`${API_BASE}/user/role?userId=${user.id}`)
       .then((r) => r.json())
       .then((data: { role?: string }) => {
         if (data.role) {

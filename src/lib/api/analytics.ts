@@ -15,6 +15,7 @@ export interface AnalyticsBundle {
   agentDecisions: AgentDecisionsPoint[];
   rejectionReasons: RejectionReasonPoint[];
   productRecommendations: ProductRecommendationPoint[];
+  recommendationAnalytics?: RecommendationMetrics;
 }
 
 export function getAnalytics() {

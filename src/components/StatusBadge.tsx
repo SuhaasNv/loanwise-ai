@@ -14,6 +14,8 @@ const statusConfig: Record<string, { label: string; variant: "default" | "second
   completed: { label: "Completed", variant: "default" },
   in_progress: { label: "In Progress", variant: "secondary" },
   queued: { label: "Queued", variant: "outline" },
+  processing: { label: "Processing", variant: "secondary" },
+  pending_review: { label: "Awaiting Decision", variant: "secondary" },
   success: { label: "Success", variant: "default" },
   failure: { label: "Failed", variant: "destructive" },
   running: { label: "Running", variant: "secondary" },

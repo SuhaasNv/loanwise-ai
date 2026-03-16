@@ -12,6 +12,16 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+    // Dev proxy: requests to /api/* are forwarded to the FastAPI backend.
+    // With this in place, VITE_API_URL can be left unset in .env.local and
+    // api-client.ts will automatically use the "/api" default.
+    proxy: {
+      "/api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ""),
+      },
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

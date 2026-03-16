@@ -113,6 +113,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE loans ADD COLUMN managerNotes TEXT DEFAULT ''")
     if "withdrawnAt" not in cols:
         conn.execute("ALTER TABLE loans ADD COLUMN withdrawnAt TEXT")
+    if "aiRecommendation" not in cols:
+        conn.execute("ALTER TABLE loans ADD COLUMN aiRecommendation TEXT")
     conn.commit()
 
 

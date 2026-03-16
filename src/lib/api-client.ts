@@ -1,6 +1,6 @@
-import { mockInterceptor } from "@/lib/mock-client";
+import { mockInterceptor, mockApiFetch } from "@/lib/mock-client";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
+export const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
 const USE_MOCK = import.meta.env.VITE_USE_MOCK_DATA === "true";
 
 export class ApiError extends Error {
@@ -80,7 +80,9 @@ export async function apiFetch(
   options?: RequestInit
 ): Promise<Response> {
   if (USE_MOCK) {
-    throw new Error("apiFetch not supported in mock mode");
+    const mockResult = await mockApiFetch(endpoint, options);
+    if (mockResult !== null) return mockResult;
+    throw new Error(`apiFetch: no mock registered for ${endpoint}`);
   }
   const token = _tokenGetter ? await _tokenGetter() : null;
   const { userId, role } = _userContext;

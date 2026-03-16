@@ -43,6 +43,13 @@ export function processLoan(id: string) {
   return apiClient<Loan>(`/loans/${id}/process`, { method: "POST" });
 }
 
+export function submitDecision(id: string, decision: "approved" | "denied") {
+  return apiClient<Loan>(`/loans/${id}/decision`, {
+    method: "POST",
+    body: JSON.stringify({ decision }),
+  });
+}
+
 export function predictLoan(data: LoanPredictionRequest) {
   return apiClient<LoanPredictionResponse>("/loan/predict", {
     method: "POST",

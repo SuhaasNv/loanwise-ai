@@ -7,10 +7,12 @@ import csv
 import io
 import json
 import os
+import sys
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+import jwt as pyjwt
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -54,33 +56,126 @@ db.init_db()
 MANAGER_SECRET = os.getenv("MANAGER_SECRET", "loanwise-manager-2026")
 CLERK_SECRET_KEY = os.getenv("CLERK_SECRET_KEY", "")
 
+# Clerk JWKS URL for JWT verification.
+# Set to: https://<your-frontend-api>.clerk.accounts.dev/.well-known/jwks.json
+# When unset, the backend runs in dev mode and trusts X-User-Id / X-User-Role headers.
+CLERK_JWKS_URL = os.getenv("CLERK_JWKS_URL", "")
+
+_jwks_client: Optional[pyjwt.PyJWKClient] = None
+
+
+def _get_jwks_client() -> Optional[pyjwt.PyJWKClient]:
+    global _jwks_client
+    if not CLERK_JWKS_URL:
+        return None
+    if _jwks_client is None:
+        _jwks_client = pyjwt.PyJWKClient(CLERK_JWKS_URL, cache_jwk_set=True, lifespan=300)
+    return _jwks_client
+
+
+@app.on_event("startup")
+async def startup_checks() -> None:
+    if MANAGER_SECRET == "loanwise-manager-2026":
+        env = os.getenv("ENVIRONMENT", "development").lower()
+        if env == "production":
+            print(
+                "[ERROR] MANAGER_SECRET is using the default value in production. "
+                "Set a strong secret via the MANAGER_SECRET environment variable.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        else:
+            print(
+                "[WARNING] MANAGER_SECRET is using the default value. "
+                "Set MANAGER_SECRET before deploying to production."
+            )
+    if not CLERK_JWKS_URL:
+        print(
+            "[WARNING] CLERK_JWKS_URL is not set. JWT verification is disabled. "
+            "The API trusts client-provided X-User-Id and X-User-Role headers. "
+            "Set CLERK_JWKS_URL in production."
+        )
+
 
 # ─── Auth dependency ──────────────────────────────────────────────────────────
 
-def get_user_id(x_user_id: Optional[str] = Header(default=None)) -> Optional[str]:
-    return x_user_id
+def get_verified_user_id(authorization: Optional[str] = Header(default=None)) -> Optional[str]:
+    """
+    Verify Clerk JWT when CLERK_JWKS_URL is configured.
+    Returns the verified user_id (sub claim) on success.
+    Returns None when CLERK_JWKS_URL is not set (dev mode — no JWT verification).
+    Raises 401 when CLERK_JWKS_URL is set but the token is missing or invalid.
+    """
+    client = _get_jwks_client()
+    if not client:
+        return None  # dev mode: JWT verification disabled
+
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
+    token = authorization[7:]
+    try:
+        signing_key = client.get_signing_key_from_jwt(token)
+        payload = pyjwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            options={"verify_aud": False},
+        )
+        return payload.get("sub")
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except pyjwt.InvalidTokenError as exc:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {exc}")
 
 
-def get_user_role(x_user_role: Optional[str] = Header(default=None)) -> str:
+def get_user_id(
+    verified_id: Optional[str] = Depends(get_verified_user_id),
+    x_user_id: Optional[str] = Header(default=None),
+) -> Optional[str]:
+    """Return verified user ID from JWT (production) or X-User-Id header (dev mode)."""
+    return verified_id or x_user_id
+
+
+def get_user_role(
+    verified_id: Optional[str] = Depends(get_verified_user_id),
+    x_user_id: Optional[str] = Header(default=None),
+    x_user_role: Optional[str] = Header(default=None),
+) -> str:
+    """
+    When JWT is verified, derive role from DB (never trust client header).
+    In dev mode, fall back to X-User-Role header.
+    """
+    user_id = verified_id or x_user_id
+    if verified_id and user_id:
+        return db.get_user_role(user_id)
     return x_user_role or "customer"
 
 
 def require_manager(
+    verified_id: Optional[str] = Depends(get_verified_user_id),
     x_user_id: Optional[str] = Header(default=None),
     x_user_role: Optional[str] = Header(default=None),
 ) -> str:
     """
     Require manager role.
-    Accepts X-User-Role: manager header (sent by authenticated frontend) OR
-    falls back to DB lookup via X-User-Id for server-side verification.
+    When JWT is verified: always checks DB — never trusts X-User-Role header.
+    In dev mode: accepts X-User-Role: manager header or falls back to DB lookup.
     """
-    # Fast path: frontend already resolved the role
+    user_id = verified_id or x_user_id
+
+    if verified_id:
+        # Production path: JWT was verified — derive role from DB only
+        role = db.get_user_role(verified_id)
+        if role == "manager":
+            return "manager"
+        raise HTTPException(status_code=403, detail="Manager access required")
+
+    # Dev mode path: JWT verification is disabled — trust headers
     if x_user_role == "manager":
         return "manager"
-
-    # DB lookup path: verify via stored role
-    if x_user_id:
-        role = db.get_user_role(x_user_id)
+    if user_id:
+        role = db.get_user_role(user_id)
         if role == "manager":
             return "manager"
 
@@ -104,6 +199,10 @@ class CreateLoanRequest(BaseModel):
 class PatchLoanRequest(BaseModel):
     status: Optional[str] = None
     managerNotes: Optional[str] = None
+
+
+class SubmitDecisionRequest(BaseModel):
+    decision: str  # "approved" | "denied"
 
 
 class LoanPredictRequest(BaseModel):
@@ -308,7 +407,9 @@ def patch_loan(
 
 
 def _run_pipeline_bg(loan_id: str, loan: dict, user_id: str) -> None:
-    """Background task: runs AI pipeline and persists results."""
+    """Background task: runs AI pipeline and persists results.
+    After analysis, status becomes 'pending_review' — manager must approve or deny.
+    """
     try:
         pipeline_result = run_pipeline(
             loan_id=loan_id,
@@ -320,23 +421,24 @@ def _run_pipeline_bg(loan_id: str, loan: dict, user_id: str) -> None:
             loan_purpose=loan["loanPurpose"],
             applicant_name=loan["applicantName"],
         )
+        ai_rec = pipeline_result["decision"]
         updates = {
             "riskScore": pipeline_result["riskScore"],
             "approvalProbability": pipeline_result["approvalProbability"],
-            "decision": pipeline_result["decision"],
+            "aiRecommendation": ai_rec,
+            "decision": "pending",
             "confidence": pipeline_result["confidence"],
             "generatedEmail": pipeline_result["generatedEmail"],
             "biasScore": pipeline_result["biasScore"],
             "toxicityScore": pipeline_result["toxicityScore"],
             "recommendations": json.dumps(pipeline_result["recommendations"]),
             "factors": json.dumps(pipeline_result.get("factors", [])),
-            "status": "completed",
+            "status": "pending_review",
         }
         db.update_loan(loan_id, updates)
         db.insert_audit_log(
             loan_id, user_id, "processed",
-            f"AI pipeline completed: {pipeline_result['decision']} "
-            f"(risk={pipeline_result['riskScore']:.2f})"
+            f"AI analysis complete: recommends {ai_rec} (risk={pipeline_result['riskScore']:.2f}). Awaiting manager decision."
         )
     except Exception as e:
         print(f"[bg_pipeline] Error processing {loan_id}: {e}")
@@ -360,6 +462,8 @@ def process_loan(
         raise HTTPException(status_code=404, detail="Loan not found")
     if loan["status"] == "completed":
         return loan
+    if loan["status"] == "pending_review":
+        return loan  # Already analysed; manager must use POST /loans/{id}/decision
     if loan["status"] == "withdrawn":
         raise HTTPException(status_code=400, detail="Cannot process a withdrawn application")
 
@@ -372,6 +476,50 @@ def process_loan(
 
     loan_in_progress = db.get_loan_by_id(loan_id)
     return loan_in_progress
+
+
+@app.post("/loans/{loan_id}/decision")
+def submit_decision(
+    loan_id: str,
+    req: SubmitDecisionRequest,
+    user_id: Optional[str] = Depends(get_user_id),
+    _role: str = Depends(require_manager),
+):
+    """
+    Manager approves or denies a loan after reviewing AI analysis.
+    Only available when status is 'pending_review'.
+    """
+    decision = req.decision.lower()
+    if decision not in ("approved", "denied"):
+        raise HTTPException(status_code=400, detail="decision must be 'approved' or 'denied'")
+
+    loan = db.get_loan_by_id(loan_id)
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+    if loan["status"] != "pending_review":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot submit decision: loan status is '{loan['status']}', expected 'pending_review'",
+        )
+
+    updates = {"decision": decision, "status": "completed"}
+    ai_rec = loan.get("aiRecommendation", "").lower()
+
+    # Regenerate email if manager's decision differs from AI recommendation
+    if ai_rec and decision != ai_rec:
+        from pipeline import generate_email_text
+        new_email = generate_email_text(
+            loan["applicantName"], loan_id, decision, loan["loanAmount"]
+        )
+        updates["generatedEmail"] = new_email
+
+    db.update_loan(loan_id, updates)
+    db.insert_audit_log(
+        loan_id, user_id or "", "decision_submitted",
+        f"Manager {'approved' if decision == 'approved' else 'denied'} "
+        f"(AI recommended {ai_rec or 'N/A'})"
+    )
+    return db.get_loan_by_id(loan_id)
 
 
 @app.get("/loans/export")
@@ -488,32 +636,32 @@ def get_analytics_bundle(_role: str = Depends(require_manager)):
 
 
 @app.get("/analytics/stats")
-def get_dashboard_stats():
+def get_dashboard_stats(_role: str = Depends(require_manager)):
     return db.compute_dashboard_stats()
 
 
 @app.get("/analytics/approval-rate")
-def get_approval_trend():
+def get_approval_trend(_role: str = Depends(require_manager)):
     return db.compute_approval_trend()
 
 
 @app.get("/analytics/risk-distribution")
-def get_risk_distribution():
+def get_risk_distribution(_role: str = Depends(require_manager)):
     return db.compute_risk_distribution()
 
 
 @app.get("/analytics/agent-decisions")
-def get_agent_decisions():
+def get_agent_decisions(_role: str = Depends(require_manager)):
     return AGENT_DECISIONS
 
 
 @app.get("/analytics/rejection-reasons")
-def get_rejection_reasons():
+def get_rejection_reasons(_role: str = Depends(require_manager)):
     return db.compute_rejection_reasons()
 
 
 @app.get("/analytics/product-recommendations")
-def get_product_recommendation_stats():
+def get_product_recommendation_stats(_role: str = Depends(require_manager)):
     return PRODUCT_RECOMMENDATIONS
 
 

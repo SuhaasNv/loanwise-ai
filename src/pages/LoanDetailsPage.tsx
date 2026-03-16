@@ -6,6 +6,7 @@ import { useLoan } from "@/hooks/useLoans";
 import { useGenerateEmail } from "@/hooks/useGenerateEmail";
 import { useRecommendations } from "@/hooks/useRecommendations";
 import { useProcessLoan } from "@/hooks/useProcessLoan";
+import { useSubmitDecision } from "@/hooks/useSubmitDecision";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RiskMeter } from "@/components/RiskMeter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +18,8 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft, RefreshCw, Loader2, User, Brain, Mail,
   Shield, Gift, PlayCircle, ClipboardList, StickyNote, HelpCircle,
+  CheckCircle, XCircle, TrendingUp, TrendingDown, Minus,
+  Zap, BrainCircuit, AlertCircle, ThumbsUp, ThumbsDown,
 } from "lucide-react";
 import {
   Tooltip,
@@ -27,6 +30,246 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { updateManagerNotes, getLoanAudit, type AuditEntry } from "@/lib/api/loans";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { AgentPipelineProgress } from "@/components/ui/agent-pipeline-progress";
+
+// ─── AI Decision Panel (shown when status = pending_review) ──────────────────
+
+function AiDecisionPanel({
+  loan,
+  emailData,
+  recsData,
+  submitDecisionMutation,
+}: {
+  loan: ReturnType<typeof useLoan>["data"] & object;
+  emailData?: { email?: string; biasScore?: number; toxicityScore?: number } | null;
+  recsData?: { recommendations?: Array<{ productName: string; type: string; rate: string; matchScore: number; description: string }> } | null;
+  submitDecisionMutation: ReturnType<typeof useSubmitDecision>;
+}) {
+  const isApproveRec = loan.aiRecommendation === "approved";
+  const riskPct = Math.round((loan.riskScore ?? 0) * 100);
+  const approvalPct = Math.round((loan.approvalProbability ?? 0) * 100);
+  const confidencePct = loan.confidence != null ? Math.round(loan.confidence * 100) : null;
+  const biasScore = emailData?.biasScore ?? loan.biasScore ?? 0;
+  const toxicityScore = emailData?.toxicityScore ?? loan.toxicityScore ?? 0;
+  const biasOk = biasScore <= 0.10 && toxicityScore <= 0.10;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="rounded-2xl border-2 border-amber-200 bg-gradient-to-b from-amber-50/60 to-white overflow-hidden"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-amber-200/70 bg-amber-50/80">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100">
+            <BrainCircuit className="h-5 w-5 text-amber-700" />
+          </div>
+          <div>
+            <p className="font-semibold text-amber-900 text-sm">AI Analysis Complete — Your Decision Required</p>
+            <p className="text-xs text-amber-700 mt-0.5">Review the AI findings below, then approve or deny</p>
+          </div>
+        </div>
+        <Badge
+          className={`text-sm font-semibold px-3 py-1 ${
+            isApproveRec
+              ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+              : "bg-red-100 text-red-800 border-red-200"
+          }`}
+        >
+          AI Recommends: {isApproveRec ? "Approve" : "Deny"}
+        </Badge>
+      </div>
+
+      <div className="p-5 space-y-5">
+        {/* Key metrics row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            {
+              label: "Risk Score",
+              value: `${riskPct}%`,
+              sub: riskPct < 40 ? "Low risk" : riskPct < 65 ? "Moderate" : "High risk",
+              color: riskPct < 40 ? "text-emerald-600" : riskPct < 65 ? "text-amber-600" : "text-red-600",
+              bg: riskPct < 40 ? "bg-emerald-50 border-emerald-100" : riskPct < 65 ? "bg-amber-50 border-amber-100" : "bg-red-50 border-red-100",
+            },
+            {
+              label: "Approval Probability",
+              value: `${approvalPct}%`,
+              sub: approvalPct >= 65 ? "Strong" : approvalPct >= 45 ? "Borderline" : "Weak",
+              color: approvalPct >= 65 ? "text-emerald-600" : approvalPct >= 45 ? "text-amber-600" : "text-red-600",
+              bg: approvalPct >= 65 ? "bg-emerald-50 border-emerald-100" : approvalPct >= 45 ? "bg-amber-50 border-amber-100" : "bg-red-50 border-red-100",
+            },
+            {
+              label: "Model Confidence",
+              value: confidencePct != null ? `${confidencePct}%` : "—",
+              sub: "AI certainty",
+              color: "text-blue-600",
+              bg: "bg-blue-50 border-blue-100",
+            },
+            {
+              label: "Bias Check",
+              value: biasOk ? "Passed" : "Flagged",
+              sub: biasOk ? "No issues detected" : "Review email",
+              color: biasOk ? "text-emerald-600" : "text-red-600",
+              bg: biasOk ? "bg-emerald-50 border-emerald-100" : "bg-red-50 border-red-100",
+            },
+          ].map((m) => (
+            <div key={m.label} className={`rounded-xl border px-4 py-3 ${m.bg}`}>
+              <p className="text-xs text-slate-500 mb-1">{m.label}</p>
+              <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{m.sub}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Decision factors */}
+        {Array.isArray(loan.factors) && loan.factors.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+              <Zap className="h-3.5 w-3.5 text-amber-500" />
+              Decision Factors
+            </p>
+            <div className="space-y-2">
+              {loan.factors.map((f) => {
+                const Icon =
+                  f.impact === "positive"
+                    ? TrendingDown
+                    : f.impact === "negative"
+                    ? TrendingUp
+                    : Minus;
+                return (
+                  <div
+                    key={f.name}
+                    className={`flex items-start gap-3 rounded-lg border p-3 text-sm ${
+                      f.impact === "positive"
+                        ? "border-emerald-100 bg-emerald-50/50"
+                        : f.impact === "negative"
+                        ? "border-red-100 bg-red-50/50"
+                        : "border-slate-100 bg-slate-50/50"
+                    }`}
+                  >
+                    <div
+                      className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+                        f.impact === "positive"
+                          ? "bg-emerald-100 text-emerald-600"
+                          : f.impact === "negative"
+                          ? "bg-red-100 text-red-600"
+                          : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-slate-800">{f.name}</span>
+                        <span className="text-slate-900 font-bold shrink-0">{f.value}</span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">{f.detail}</p>
+                    </div>
+                    <span
+                      className={`shrink-0 text-xs font-mono font-semibold ${
+                        f.contribution < 0
+                          ? "text-emerald-600"
+                          : f.contribution > 0
+                          ? "text-red-600"
+                          : "text-slate-400"
+                      }`}
+                    >
+                      {f.contribution > 0 ? "+" : ""}{(f.contribution * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Generated email preview */}
+        {(emailData?.email ?? loan.generatedEmail) && (
+          <div>
+            <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+              <Mail className="h-3.5 w-3.5 text-slate-400" />
+              AI-Generated Decision Letter Preview
+            </p>
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-xs leading-relaxed text-slate-700 font-mono max-h-40 overflow-y-auto whitespace-pre-wrap">
+              {emailData?.email ?? loan.generatedEmail}
+            </div>
+            {!biasOk && (
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-red-600">
+                <AlertCircle className="h-3.5 w-3.5" />
+                Potential bias detected in email — review before sending.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Decision buttons */}
+        <div className="border-t border-amber-200/60 pt-5">
+          <p className="text-sm font-semibold text-slate-800 mb-3">
+            Your Decision
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button
+              onClick={() =>
+                submitDecisionMutation.mutate(
+                  { loanId: loan.id, decision: "approved" },
+                  {
+                    onSuccess: () => toast.success("Loan approved"),
+                    onError: () => toast.error("Failed to submit decision"),
+                  }
+                )
+              }
+              disabled={submitDecisionMutation.isPending}
+              className="flex-1 h-12 gap-2 bg-emerald-600 hover:bg-emerald-700 text-base font-semibold shadow-sm"
+            >
+              {submitDecisionMutation.isPending ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <ThumbsUp className="h-5 w-5" />
+              )}
+              Approve Loan
+              {isApproveRec && (
+                <Badge className="ml-1 bg-emerald-500/30 text-emerald-100 border-0 text-xs">
+                  AI rec
+                </Badge>
+              )}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() =>
+                submitDecisionMutation.mutate(
+                  { loanId: loan.id, decision: "denied" },
+                  {
+                    onSuccess: () => toast.success("Loan denied"),
+                    onError: () => toast.error("Failed to submit decision"),
+                  }
+                )
+              }
+              disabled={submitDecisionMutation.isPending}
+              className="flex-1 h-12 gap-2 text-base font-semibold shadow-sm"
+            >
+              {submitDecisionMutation.isPending ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <ThumbsDown className="h-5 w-5" />
+              )}
+              Deny Loan
+              {!isApproveRec && (
+                <Badge className="ml-1 bg-red-400/30 text-red-100 border-0 text-xs">
+                  AI rec
+                </Badge>
+              )}
+            </Button>
+          </div>
+          <p className="mt-3 text-xs text-slate-400 text-center">
+            Your decision overrides the AI recommendation if they differ. The decision letter will be updated accordingly.
+          </p>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 export default function LoanDetailsPage() {
   const { id } = useParams<{ id: string }>();
@@ -36,8 +279,10 @@ export default function LoanDetailsPage() {
   const emailMutation = useGenerateEmail();
   const recsMutation = useRecommendations();
   const processMutation = useProcessLoan();
+  const submitDecisionMutation = useSubmitDecision();
 
   const isQueued = loan?.status === "queued" || loan?.status === "processing" || loan?.decision === "pending";
+  const isPendingReview = loan?.status === "pending_review";
 
   const [notes, setNotes] = useState("");
   const [notesDirty, setNotesDirty] = useState(false);
@@ -46,13 +291,15 @@ export default function LoanDetailsPage() {
     if (loan?.managerNotes != null) setNotes(loan.managerNotes);
   }, [loan?.managerNotes]);
 
-  // Auto-fetch AI data for completed loans
+  // Auto-fetch AI data for completed loans and pending_review (skip when queued/processing)
   useEffect(() => {
-    if (!loan || isQueued) return;
-    if (!emailMutation.data && !emailMutation.isPending) {
+    if (!loan || loan.status === "queued" || loan.status === "processing") return;
+    // For pending_review, pipeline already provides generatedEmail; only fetch if missing
+    const decisionForEmail = isPendingReview && loan.aiRecommendation ? loan.aiRecommendation : loan.decision;
+    if (!emailMutation.data && !emailMutation.isPending && (decisionForEmail === "approved" || decisionForEmail === "denied") && !(isPendingReview && loan.generatedEmail)) {
       emailMutation.mutate({
         loanId: loan.id,
-        decision: loan.decision,
+        decision: decisionForEmail,
         applicantName: loan.applicantName,
         loanAmount: loan.loanAmount,
       });
@@ -142,14 +389,14 @@ export default function LoanDetailsPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold">{loan.applicantName}</h1>
-              <StatusBadge status={loan.decision} />
+              <StatusBadge status={isPendingReview ? "pending_review" : loan.decision} />
             </div>
             <p className="text-xs text-muted-foreground font-mono">
               {loan.id} · Applied {loan.applicationDate}
             </p>
           </div>
         </div>
-        {(isQueued && loan.status !== "processing") && (
+        {(isQueued && loan.status !== "processing" && !isPendingReview) && (
           <Button
             onClick={() => processMutation.mutate(loan.id)}
             disabled={processMutation.isPending}
@@ -172,14 +419,17 @@ export default function LoanDetailsPage() {
         </div>
       )}
 
-      {loan.status === "processing" && (
-        <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-          <span>
-            <span className="font-semibold">AI agents running…</span>{" "}
-            RiskAssessor → EmailGenerator → BiasDetector → ProductRecommender
-          </span>
-        </div>
+      {(loan.status === "processing") && (
+        <AgentPipelineProgress isRunning={loan.status === "processing"} />
+      )}
+
+      {isPendingReview && (
+        <AiDecisionPanel
+          loan={loan}
+          emailData={emailMutation.data}
+          recsData={recsMutation.data}
+          submitDecisionMutation={submitDecisionMutation}
+        />
       )}
 
       {loan.status === "withdrawn" && (

@@ -28,6 +28,11 @@ Loan Application
 ┌──────────────────┐
 │ Recommendation   │  If denied: suggests alternative products
 │     Agent        │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Manager Review   │  AI recommendation presented; manager approves or denies
 └──────────────────┘
 ```
 
