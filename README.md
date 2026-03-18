@@ -39,6 +39,7 @@ An intelligent lending system that automates the full loan origination workflow 
 - [Environment Variables](#environment-variables)
 - [API Reference](#api-reference)
 - [Deployment](#deployment)
+- [Future Roadmap](#future-roadmap)
 - [License](#license)
 
 ---
@@ -653,6 +654,59 @@ Interactive Swagger UI: **`http://localhost:8000/docs`**
 **CORS:** Set `ALLOWED_ORIGINS` on Railway to your exact Vercel URL (no trailing slash).
 
 See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for full instructions including Docker self-hosting.
+
+---
+
+## Future Roadmap
+
+Planned USP implementations to strengthen LoanWise AI’s competitive edge:
+
+### Data & Verification
+
+| Feature | Description |
+|---------|-------------|
+| **Open Banking integration** | Plaid, Yodlee, or Tink for real-time income/expense verification and bank account aggregation |
+| **Real-time document parsing** | Full bank statement parsing (transactions, balances); OCR for scanned payslips and IDs |
+| **Credit bureau integration** | Live credit score pulls from Experian, Equifax, or TransUnion via API |
+| **Income verification** | Automated employment verification via The Work Number or similar |
+
+### Risk & Compliance
+
+| Feature | Description |
+|---------|-------------|
+| **Fraud detection** | ML-based anomaly detection for identity fraud, synthetic fraud, and application inconsistencies |
+| **AML/KYC checks** | Sanctions screening, PEP lists, and identity verification (e.g. Onfido, Jumio) |
+| **Credit score simulator** | “What if” calculator: improve credit by X points → see approval probability change |
+| **Multi-jurisdiction rules** | Configurable lending rules by region (US, EU, APAC) with regional compliance checks |
+
+### Customer Experience
+
+| Feature | Description |
+|---------|-------------|
+| **Real-time email notifications** | Production email delivery via Resend, SendGrid, or AWS SES for decision letters |
+| **SMS/WhatsApp alerts** | Status updates and reminders via Twilio or similar |
+| **E-signature integration** | DocuSign or HelloSign for loan agreements and disclosures |
+| **Multi-language support** | Localised UI and decision letters (Spanish, French, etc.) |
+| **Mobile app** | React Native or native iOS/Android apps for on-the-go applications |
+
+### Platform & Scale
+
+| Feature | Description |
+|---------|-------------|
+| **PostgreSQL migration** | Production-grade database with connection pooling and full-text search |
+| **Redis caching** | Session caching, rate-limit storage, and pipeline result caching |
+| **Async job queue** | Celery + Redis or BullMQ for scalable pipeline execution |
+| **Webhooks** | Outbound events for CRM, ERP, and third-party integrations |
+| **Audit log export** | Immutable audit trail with S3/Cloud Storage archival and compliance reporting |
+
+### AI & Analytics
+
+| Feature | Description |
+|---------|-------------|
+| **Model calibration dashboard** | A/B testing of risk thresholds; approval vs. default rate tuning |
+| **Explainability reports** | PDF/HTML export of decision rationale for regulators and customers |
+| **Predictive analytics** | Early warning for default risk; portfolio-level analytics |
+| **Agent orchestration** | LangGraph or custom DAG for complex, branching workflows |
 
 ---
 
