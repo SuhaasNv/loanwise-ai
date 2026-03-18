@@ -177,9 +177,36 @@ serve dist -s -l 8080
 
 ---
 
+## Part 6: Enable Data Persistence (Required for Production)
+
+**Without this step, all data is lost on redeploy** — loan applications, manager roles, and settings will reset. Follow these steps to persist the database.
+
+### Step 1: Add a Volume to the Backend Service
+
+1. In your Railway project, click the **backend** service.
+2. Go to **Settings** → **Volumes** (or use the **+ New** button and choose **Volume**).
+3. Create a new volume and connect it to the backend service.
+4. Set the **Mount Path** to: `/app/data`
+   - Railway runs your app from `/app`. Mounting here ensures the database survives redeploys.
+
+### Step 2: Set the Database Path
+
+1. Go to the backend service → **Variables**.
+2. Add:
+   | Variable        | Value                         |
+   |-----------------|-------------------------------|
+   | `DATABASE_PATH` | `/app/data/loanwise.db`       |
+
+3. Save. Railway will redeploy.
+
+### Step 3: Verify
+
+1. Visit your app, sign in, and go to `/claim-manager` to claim manager.
+2. Create a loan application.
+3. Log out and log back in — your manager role and loan applications should still be there.
+
+---
+
 ## Data Persistence Note
 
-The backend uses SQLite. On Railway, the filesystem is ephemeral, so **data is lost on redeploy**. For persistent data:
-
-- Add a **Railway Volume** and mount it to the backend’s data directory, or
-- Migrate to PostgreSQL and update the backend to use it.
+The backend uses SQLite. On Railway, the filesystem is ephemeral, so **data is lost on redeploy** unless you add a Volume (see Part 6 above). For larger deployments, consider migrating to PostgreSQL.

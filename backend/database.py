@@ -2,6 +2,7 @@
 SQLite persistence layer for Loanwise AI.
 Uses Python's built-in sqlite3 — no extra dependencies.
 """
+import os
 import sqlite3
 import json
 import uuid
@@ -10,7 +11,12 @@ from datetime import datetime, timezone
 
 from data import LOANS, AGENT_LOGS, RECOMMENDATIONS_CATALOG
 
-DB_PATH = Path(__file__).parent / "loanwise.db"
+# Use DATABASE_PATH env var for persistent storage (e.g. Railway Volume mount).
+# Default: loanwise.db next to this file (ephemeral on Railway).
+_db_path_env = os.getenv("DATABASE_PATH")
+DB_PATH = Path(_db_path_env) if _db_path_env else Path(__file__).parent / "loanwise.db"
+if _db_path_env:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def get_db() -> sqlite3.Connection:

@@ -285,7 +285,7 @@ The app uses SQLite by default. On platforms with ephemeral filesystems (Railway
 
 - Data is lost on each redeploy.
 - For persistence, either:
-  - Use a **Railway Volume** (or equivalent) mounted to the backend’s data directory, or
+  - Add a **Railway Volume** mounted to /app/data and set DATABASE_PATH=/app/data/loanwise.db, or
   - Migrate to **PostgreSQL** and update `database.py` to use a PostgreSQL driver (e.g. `psycopg2` or `asyncpg`).
 
 For small demos or internal tools, ephemeral SQLite is acceptable.
