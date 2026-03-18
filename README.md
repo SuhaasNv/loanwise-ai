@@ -1,12 +1,21 @@
+<div align="center">
+
 # LoanWise AI
 
-<p align="center">
-  <strong>AI-Powered Loan Origination Platform</strong>
-</p>
+### AI-Powered Loan Origination Platform
 
-<p align="center">
-  An intelligent lending system that uses a multi-agent pipeline to evaluate loan applications, generate decision letters, detect bias, and recommend alternative products — with full explainability.
-</p>
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react)](https://react.dev)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python)](https://python.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript)](https://typescriptlang.org)
+[![Gemini](https://img.shields.io/badge/Gemini-2.5_Flash-4285F4?style=flat-square&logo=google)](https://aistudio.google.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+
+An intelligent lending system that automates the full loan origination workflow — from application to decision — using a **multi-agent AI pipeline** built on Google Gemini 2.5 Flash with OpenAI fallback and deterministic heuristics.
+
+[Live Demo](https://loanwise-ai-weld.vercel.app) · [API Docs](https://loanwise-ai-backend-production.up.railway.app/docs) · [Deployment Guide](docs/DEPLOYMENT.md)
+
+</div>
 
 ---
 
@@ -14,397 +23,390 @@
 
 - [Overview](#overview)
 - [Key Features](#key-features)
-- [Architecture](#architecture)
-- [AI Agents & Orchestration](#ai-agents--orchestration)
-- [Risk Assessment Formulas](#risk-assessment-formulas)
-- [Tech Stack](#tech-stack)
+- [System Architecture](#system-architecture)
+- [AI Agent Pipeline](#ai-agent-pipeline)
+  - [Agent 1: RiskAssessor](#agent-1-riskassessor)
+  - [Agent 2: ProductRecommender](#agent-2-productrecommender)
+  - [Agent 3: EmailGenerator](#agent-3-emailgenerator)
+  - [Agent 4: BiasDetector](#agent-4-biasdetector)
+  - [Agent 5: DocumentVerifier](#agent-5-documentverifier)
+  - [Orchestration & Fallback Strategy](#orchestration--fallback-strategy)
+- [Risk Assessment Model](#risk-assessment-model)
 - [Security](#security)
+- [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
 - [Environment Variables](#environment-variables)
+- [API Reference](#api-reference)
 - [Deployment](#deployment)
-- [API Documentation](#api-documentation)
-- [Running Tests](#running-tests)
 - [License](#license)
 
 ---
 
 ## Overview
 
-LoanWise AI automates the loan decision workflow using **Google Gemini 2.5 Flash** and calibrated heuristics. The platform evaluates applications against CFPB, Fannie Mae conventional, and FHA guidelines; generates personalised decision letters; screens for discriminatory language; and suggests alternative products when applications are denied.
+LoanWise AI is a full-stack, production-grade loan origination platform designed for banks, fintech companies, and lending teams. It replaces manual underwriting with a **sequential multi-agent AI pipeline** that:
 
-**Target users:** Risk analysts, loan underwriters, fintech operations teams, and lending startups.
+1. **Assesses creditworthiness** against CFPB, Fannie Mae, and FHA guidelines
+2. **Recommends alternative products** for denied applicants
+3. **Generates personalised decision letters** with warmth and clarity
+4. **Screens all communications** for discriminatory language (CFPB compliance)
+5. **Verifies supporting documents** via AI-powered extraction
+
+Every decision is fully explainable — customers see exactly which factors influenced the outcome.
+
+> **Target users:** Risk analysts, loan underwriters, fintech operations teams, and lending startups.
 
 ---
 
 ## Key Features
 
 | Feature | Description |
-|--------|-------------|
-| **Multi-step loan application** | Real-time validation, localStorage draft persistence, guided flow |
-| **AI risk assessment** | RiskAssessor agent evaluates creditworthiness against industry guidelines |
-| **Explainable AI** | Risk factors, contributions, and thresholds shown per decision |
-| **Personalised decision letters** | EmailGenerator creates warm, professional correspondence |
-| **Bias & toxicity detection** | BiasDetector screens all AI-generated emails per CFPB fair lending rules |
-| **Product recommendations** | ProductRecommender suggests alternatives for denied applicants |
-| **Manager dashboard** | Analytics, loan review, AI decisions, CSV export |
-| **Role-based auth** | Customer / manager roles via Clerk JWT |
+|---------|-------------|
+| **Multi-agent AI pipeline** | 5 specialised agents in a sequential, context-sharing pipeline |
+| **Dual AI provider** | Gemini 2.5 Flash as primary; OpenAI GPT-4o-mini as fallback; heuristics as last resort |
+| **Explainable decisions** | Risk factors, contributions, and industry thresholds shown for every application |
+| **Bias auto-remediation** | BiasDetector triggers automatic email rewrites if discriminatory language is detected |
+| **Product recommendations** | Contextual alternative products for denied applicants with personalised match scores |
+| **Document intelligence** | AI-powered extraction and cross-validation of payslips, IDs, and bank statements |
+| **Manager dashboard** | Real-time analytics, loan queue, AI decisions, audit trail, CSV export |
+| **Multi-step customer portal** | Guided application with real-time validation and draft persistence |
+| **Role-based authentication** | Clerk JWT with RS256 verification; roles stored server-side, never trusted from client |
+| **Enterprise security** | OWASP Top 10 hardening — RLS, IDOR prevention, rate limiting, security headers |
 
 ---
 
-## Architecture
-
-### System Diagram
+## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              LoanWise AI                                      │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  Frontend (React + Vite)          │  Backend (FastAPI)                        │
-│  • Landing, Portal, Dashboard     │  • REST API, JWT auth                     │
-│  • TanStack Query, shadcn/ui      │  • SQLite persistence                     │
-│  • Clerk authentication          │  • Background task orchestration          │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                          │
-                                          ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         AI Agent Pipeline                                     │
-│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐  │
-│  │ RiskAssessor │ → │EmailGenerator│ → │ BiasDetector │ → │ProductRecomm.│  │
-│  │ (Gemini/     │   │ (Gemini/     │   │ (Gemini/     │   │ (Gemini/     │  │
-│  │  Heuristic)  │   │  Template)   │   │  Heuristic)  │   │  Fallback)   │  │
-│  └──────────────┘   └──────────────┘   └──────────────┘   └──────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Pipeline Flow
-
-```
-Loan Application
-       │
-       ▼
-┌──────────────────┐
-│  RiskAssessor    │  Predicts risk score, approval probability, decision
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│ ProductRecommender│  (If denied) Suggests alternative products
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│ EmailGenerator   │  Generates personalised decision letter
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│ BiasDetector     │  Validates for discrimination/toxicity
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│ Manager Review   │  AI recommendation; manager approves or denies
-└──────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                                   CLIENT                                          │
+│                                                                                    │
+│   ┌────────────────────────┐          ┌──────────────────────────────────────┐   │
+│   │   Customer Portal      │          │       Manager Dashboard               │   │
+│   │  ─────────────────     │          │  ──────────────────────────────────  │   │
+│   │  • Multi-step form     │          │  • Loan queue & review               │   │
+│   │  • Application status  │          │  • AI pipeline trigger               │   │
+│   │  • Document upload     │          │  • Analytics & charts                │   │
+│   │  • Eligibility check   │          │  • Audit trail & CSV export          │   │
+│   └────────────┬───────────┘          └──────────────────┬───────────────────┘   │
+│                │                                          │                        │
+│          React 18 · Vite · TanStack Query · Clerk · shadcn/ui · Tailwind          │
+└────────────────┼──────────────────────────────────────────┼───────────────────────┘
+                 │  HTTPS + JWT (Bearer)                     │
+                 ▼                                           ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                               FASTAPI BACKEND                                     │
+│                                                                                    │
+│   ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────────────┐   │
+│   │  Auth & Security │  │   REST API Layer  │  │   Background Task Engine     │   │
+│   │  ──────────────  │  │  ─────────────── │  │  ──────────────────────────  │   │
+│   │  • Clerk JWT/RS256│  │  • 30+ endpoints │  │  • FastAPI BackgroundTasks   │   │
+│   │  • Role from DB   │  │  • Input validation│ │  • Retry (×2, exp. backoff) │   │
+│   │  • Rate limiting  │  │  • CORS, headers │  │  • Status: queued→completed  │   │
+│   │  • RLS policies   │  │  • Audit logging │  │  • Async + non-blocking      │   │
+│   └──────────────────┘  └──────────────────┘  └──────────────────────────────┘   │
+│                                    │                                               │
+│                        SQLite (loanwise.db)                                       │
+│          loans · users · agent_logs · audit_logs · documents                      │
+└────────────────────────────────────┼─────────────────────────────────────────────┘
+                                     │
+                                     ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                            AI AGENT PIPELINE                                      │
+│                         pipeline.py · run_pipeline()                              │
+│                                                                                    │
+│  ┌─────────────────┐    ┌──────────────────┐    ┌────────────────┐               │
+│  │  RiskAssessor   │───▶│ ProductRecommender│───▶│ EmailGenerator │               │
+│  │                 │    │  (if denied only) │    │                │               │
+│  │  • CFPB/FHA     │    │  • Match scoring  │    │  • Personalised│               │
+│  │    guidelines   │    │  • Catalog lookup │    │    letter      │               │
+│  │  • 4 factors    │    │  • Smaller loan   │    │  • Empathetic  │               │
+│  │  • Explainable  │    │    injection      │    │    tone        │               │
+│  └─────────────────┘    └──────────────────┘    └───────┬────────┘               │
+│                                                          │                         │
+│                                                          ▼                         │
+│                                                 ┌────────────────┐                │
+│                                                 │  BiasDetector  │                │
+│                                                 │                │                │
+│                                                 │  • CFPB scan   │                │
+│                                                 │  • Auto-rewrite│                │
+│                                                 │  • ≤2 retries  │                │
+│                                                 └────────────────┘                │
+│                                                                                    │
+│  Each agent: Gemini 2.5 Flash ──▶ OpenAI GPT-4o-mini ──▶ Heuristic fallback      │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Loan Status Lifecycle
 
 ```
-queued → processing → pending_review → completed
-       → withdrawn  (customer or manager)
-       → error      (pipeline failure after retries)
+         Customer submits
+               │
+               ▼
+           ┌───────┐
+           │ queued │  ◀─── Default state after submission
+           └───┬───┘
+               │  Manager triggers / autoProcess
+               ▼
+         ┌──────────┐
+         │processing│  ◀─── Pipeline running in background
+         └─────┬────┘
+               │  Pipeline complete
+               ▼
+       ┌──────────────┐
+       │pending_review│  ◀─── Awaiting manager approve/deny
+       └──────┬───────┘
+              │  Manager submits decision
+              ▼
+         ┌─────────┐
+         │completed│  ◀─── Final state
+         └─────────┘
+
+    ─────────────────────────────────
+    withdrawn  ◀── Customer or manager at any pre-completed stage
+    error      ◀── Pipeline failed after 2 retry attempts
 ```
 
 ---
 
-## AI Agents & Orchestration
+## AI Agent Pipeline
 
-### Overview
+The pipeline runs **five specialised agents** sequentially. Agents share context — each agent's output is available to subsequent ones. There is no external queue; orchestration is handled by FastAPI `BackgroundTasks` with a retry loop.
 
-The pipeline orchestrates **four specialised AI agents** in a fixed sequence. Each agent uses **Google Gemini 2.5 Flash** and has a **deterministic heuristic fallback** when the API is unavailable. There is no external queue (Redis, Celery) — orchestration is handled by **FastAPI** `BackgroundTasks` and a single Python `run_pipeline()` function.
-
----
+```
+Loan Data
+    │
+    ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  _run_pipeline_bg()  —  Retry: up to 2 attempts, exponential backoff (2s, 4s)   │
+│                                                                                    │
+│  run_pipeline(loan_id, income, credit_score, loan_amount, dti, ...)               │
+│  ─────────────────────────────────────────────────────────────────                │
+│                                                                                    │
+│  1 ▶ RiskAssessor(income, credit_score, loan_amount, dti, employment, purpose)    │
+│      └─▶ risk_result: {riskScore, decision, factors[], reasoning, confidence}     │
+│                                                                                    │
+│  2 ▶ ProductRecommender(income, credit_score, dti, loan_amount, denial_factors)   │
+│      └─▶ recommendations[]  ← only if decision == "denied"                        │
+│                                                                                    │
+│  3 ▶ EmailGenerator(name, loan_id, decision, factors, reasoning, recommendations) │
+│      └─▶ email_text (≤350 words, professional, personalised)                      │
+│                                                                                    │
+│  4 ▶ BiasDetector(email_text) → {biasScore, toxicityScore, passed}                │
+│      └─▶ if not passed: regenerate email (auto-remediation, max 2 rewrites)       │
+│                                                                                    │
+│  ✓ Success → loan status = pending_review                                          │
+│  ✗ Failure → loan status = error                                                   │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ### Agent 1: RiskAssessor
 
-**Purpose:** Evaluates loan applications against CFPB, Fannie Mae conventional, and FHA guidelines; outputs risk score, approval probability, decision, and explainable factors.
+**Purpose:** Evaluates creditworthiness against CFPB, Fannie Mae conventional, and FHA guidelines.
 
 | Input | Output |
 |-------|--------|
-| Income, credit score, loan amount, DTI, employment type, loan purpose | `riskScore`, `approvalProbability`, `decision`, `confidence`, `factors[]`, `reasoning` |
+| Income, credit score, loan amount, DTI, employment type, loan purpose | `riskScore` (0–1), `approvalProbability` (0–1), `decision`, `confidence`, `factors[4]`, `reasoning` |
 
-**Tools & capabilities:**
+**Output — 4 mandatory factors:**
 
-- **Gemini API** — Structured prompt with application details and industry guidelines; returns JSON with `riskScore`, `approvalProbability`, `decision`, `confidence`, `factors`, `reasoning` (4 factors: Credit Score, DTI, LTI, Employment Type)
-- **Heuristic fallback** — Calibrated tier-based scoring (credit tiers, DTI tiers, LTI tiers, employment deltas); base risk 0.45 + contributions
-- **Output validation** — Clamps `riskScore` and `approvalProbability` to `[0.04, 0.96]`; enforces `decision = approved` if `risk < 0.50`
+| Factor | Threshold |
+|--------|-----------|
+| Credit Score | 670+ conventional; 580+ FHA |
+| Debt-to-Income Ratio | ≤36% preferred; ≤43% FHA limit |
+| Loan-to-Income Ratio | <3× conservative; >5× very high |
+| Employment Type | Full-time preferred |
+
+**Fallback chain:** Gemini 2.5 Flash → OpenAI GPT-4o-mini → Calibrated heuristic scoring
 
 ---
 
 ### Agent 2: ProductRecommender
 
-**Purpose:** Suggests alternative financial products for **denied** applicants. Runs only when RiskAssessor returns `denied`.
+**Purpose:** Suggests the best-fit alternative financial products for denied applicants.
 
 | Input | Output |
 |-------|--------|
-| Income, credit score, DTI, loan amount, loan purpose, denial factors | Product list with `matchScore` (0–100) and `reason` per product |
+| Income, credit score, DTI, loan amount, denial factors | `recommendations[]` with `productName`, `matchScore` (0–100), `reason`, `rate` |
 
-**Tools & capabilities:**
+**Special behaviour:**
+- Only runs when `decision == "denied"`
+- Dynamically injects a **Reduced Loan offer** (75% of requested amount) when DTI is the primary blocker
+- Results are passed to EmailGenerator so the denial letter includes the offers
 
-- **Gemini API** — Receives applicant profile and product catalog; scores each product by fit and returns JSON array
-- **Product catalog** — Static list from `data.py` (`RECOMMENDATIONS_CATALOG`): Personal Loan, FHA Mortgage, Credit Card, Savings Plan, Auto Loan
-- **Heuristic fallback** — Rule-based scoring (e.g. FHA +15 for credit ≥580 and DTI ≤50%; Credit Card +20 for credit <620)
-- **Dynamic injection** — `_inject_smaller_loan()` adds a “Reduced Loan” offer when DTI is the main blocker (75% of requested amount, rounded to nearest $1k)
+**Catalog:** Personal Loan, FHA Mortgage, Credit Card, Savings Plan, Auto Loan, + dynamic Reduced Amount Loan
 
 ---
 
 ### Agent 3: EmailGenerator
 
-**Purpose:** Writes a personalised, professional decision letter for the applicant.
+**Purpose:** Writes a professional, warm, and personalised decision letter.
 
 | Input | Output |
 |-------|--------|
-| Applicant name, loan ID, decision, loan amount, factors, reasoning, optional recommendations | Plain-text email body (≤350 words) |
+| Applicant name, loan ID, decision, factors, reasoning, optional recommendations | Plain-text email body (≤350 words) |
 
-**Tools & capabilities:**
-
-- **Gemini API** — Structured prompt with positive/negative factors, reasoning, and optional alternative products; generates warm, empathetic prose
-- **Template fallback** — Jinja-style string templates for approval and denial; includes factor bullets and optional “Next Best Offer” section
+**Letter contents:**
+- **Approved:** Congratulations, specific strengths cited, next steps (loan officer in 2 business days)
+- **Denied:** Empathetic tone, specific factor values cited (e.g. "your DTI of 48%"), re-apply guidance in 90 days, "Next Best Offer" section with top 1–2 alternatives
 
 ---
 
 ### Agent 4: BiasDetector
 
-**Purpose:** Screens generated emails for discriminatory or toxic language per CFPB fair lending rules.
+**Purpose:** Screens all generated letters for CFPB fair lending compliance.
 
 | Input | Output |
 |-------|--------|
-| Generated email text, loan ID | `biasScore`, `toxicityScore`, `passed`, `explanation` |
+| Email text | `biasScore` (0–1), `toxicityScore` (0–1), `passed` (bool), `explanation` |
 
-**Tools & capabilities:**
+**Checks for:**
+- Protected class references (race, religion, sex, age, national origin, disability, familial status, marital status)
+- Toxic or demeaning language
+- Vague denial reasons that could mask discrimination
+- Unnecessarily harsh tone
 
-- **Gemini API** — Compliance prompt; checks for protected class references, toxic language, vague denials, harsh tone; returns JSON
-- **Heuristic fallback** — Keyword scan for protected terms (`race`, `religion`, `sex`, etc.) and toxic words (`terrible`, `pathetic`, etc.); `bias = min(hits × 0.05, 0.20)`, `toxicity = min(hits × 0.10, 0.30)`
-- **Pass threshold** — `passed = true` only when both scores < 0.10
-
----
-
-### Orchestration Flow
+**Auto-remediation:** If `passed == false`, the pipeline automatically triggers EmailGenerator to rewrite the letter. Up to **2 rewrites** before accepting the result.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Trigger: POST /loans/:id/process (Manager only)                             │
-│  Backend: background_tasks.add_task(_run_pipeline_bg, loan_id, loan, user_id)│
-└─────────────────────────────────────────────────────────────────────────────┘
-                                          │
-                                          ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  _run_pipeline_bg() — Retry loop (up to 2 attempts, exponential backoff)     │
-│  ┌─────────────────────────────────────────────────────────────────────────────────┐
-│  │  run_pipeline() — Sequential execution in pipeline.py                             │
-│  │                                                                                  │
-│  │  1. RiskAssessor   → risk_result (factors, decision, reasoning)                   │
-│  │  2. ProductRecommender (if denied) → recommendations[]                            │
-│  │  3. EmailGenerator → email_text (uses factors + recommendations)                 │
-│  │  4. BiasDetector   → bias_score, toxicity_score, passed                          │
-│  │                                                                                  │
-│  │  Each step: insert_agent_log() → SQLite agent_logs table                          │
-│  └─────────────────────────────────────────────────────────────────────────────────┘
-│                                          │
-│  Success → update loan: status=pending_review, aiRecommendation, factors, etc. │
-│  Failure → update loan: status=error (after retries)                           │
-└─────────────────────────────────────────────────────────────────────────────┘
+BiasDetector detects issue
+      │
+      ▼
+EmailGenerator rewrite #1
+      │
+      ▼
+BiasDetector re-scans
+      │ still failing?
+      ▼
+EmailGenerator rewrite #2  →  Accept result regardless
 ```
 
-**Key orchestration details:**
-
-| Aspect | Implementation |
-|--------|----------------|
-| **Trigger** | Manager triggers via `POST /loans/:id/process`; API returns immediately |
-| **Execution** | FastAPI `BackgroundTasks`; no external queue (Redis, Celery) |
-| **Retries** | Up to 2 attempts with exponential backoff (2s, 4s) |
-| **State** | SQLite; loan status updated in-place; `agent_logs` table for audit trail |
-| **Conditional logic** | ProductRecommender runs only when `decision == "denied"` |
-| **Data flow** | RiskAssessor output → factors/reasoning fed to EmailGenerator; recommendations fed to EmailGenerator for denial letters |
+**Pass threshold:** `biasScore < 0.10` AND `toxicityScore < 0.10`
 
 ---
 
-### Tools & Dependencies Summary
+### Agent 5: DocumentVerifier
 
-| Component | Purpose |
-|-----------|---------|
-| **Google Gemini 2.5 Flash** | Primary LLM for all agent prompts; `generate_content()` with `temperature=0.2`, `max_output_tokens=2048` |
-| **`google-genai` SDK** | Python client for Gemini API |
-| **Heuristic fallbacks** | Deterministic Python functions when `GOOGLE_API_KEY` is unset or API fails |
-| **SQLite** | `loans` table (application + pipeline results), `agent_logs` table (per-agent audit) |
-| **`insert_agent_log()`** | Logs each agent action with timestamp, status, confidence, application ID |
-| **`RECOMMENDATIONS_CATALOG`** | Product catalog from `data.py` |
+**Purpose:** Extracts structured data from uploaded documents and cross-validates against declared application data.
 
----
+| Input | Output |
+|-------|--------|
+| Base64 document, doc type, declared income, declared name | `extractedFields`, `mismatches[]`, `passed`, `confidence`, `summary` |
 
-### Standalone AI Endpoints
+**Supported document types:** payslip, NRIC/ID, bank statement, employment letter
 
-Each agent can also be invoked independently via REST endpoints (useful for testing or partial workflows):
-
-| Endpoint | Agent | Description |
-|----------|-------|--------------|
-| `POST /loan/predict` | RiskAssessor | Risk prediction only |
-| `POST /loan/email` | EmailGenerator | Generate email from decision + loan details |
-| `POST /loan/bias-check` | BiasDetector | Re-check email for bias/toxicity |
-| `POST /loan/recommendation` | ProductRecommender | Get product recommendations for denied profile |
+**Mismatch severity:** low / medium / high — loan is flagged if any high-severity mismatch is detected
 
 ---
 
-## Risk Assessment Formulas
+### Orchestration & Fallback Strategy
 
-The RiskAssessor agent uses either **Gemini 2.5 Flash** or a **calibrated heuristic fallback**. Below are the formulas and thresholds used in the heuristic model.
+Every LLM call goes through the same three-tier fallback:
 
-### Core Metrics
+```
+                    ┌─────────────────────────────┐
+                    │         _llm(prompt)          │
+                    └──────────────┬──────────────┘
+                                   │
+                    ┌──────────────▼──────────────┐
+                    │    Gemini 2.5 Flash          │
+                    │    temperature=0.2           │
+                    │    max_tokens=2048           │
+                    └──────────────┬──────────────┘
+                         success   │  failure (429, timeout, etc.)
+                                   │
+                    ┌──────────────▼──────────────┐
+                    │    OpenAI GPT-4o-mini        │
+                    │    temperature=0.2           │
+                    │    json_mode if needed       │
+                    └──────────────┬──────────────┘
+                         success   │  failure
+                                   │
+                    ┌──────────────▼──────────────┐
+                    │    Heuristic Fallback        │
+                    │    Deterministic Python      │
+                    │    No API calls needed       │
+                    └─────────────────────────────┘
+```
 
-#### Debt-to-Income Ratio (DTI)
+| Orchestration Aspect | Detail |
+|---------------------|--------|
+| **Trigger** | `POST /loans/:id/process` (manager only) — returns immediately |
+| **Execution** | FastAPI `BackgroundTasks` — non-blocking, no Redis/Celery needed |
+| **Retries** | Up to 2 pipeline attempts; exponential backoff (2s, 4s) |
+| **Context sharing** | RiskAssessor factors/reasoning → EmailGenerator; recommendations → EmailGenerator |
+| **Audit trail** | Every agent writes to `agent_logs` table with timestamp, status, confidence |
+| **Auto-processing** | Optional `autoProcessLoans` setting triggers pipeline on submission |
 
-$$
-\text{DTI} = \frac{\text{Monthly Debt Payments}}{\text{Monthly Gross Income}}
-$$
+---
 
-- Expressed as a decimal (e.g. `0.28` = 28%)
-- **Preferred:** ≤ 36%
-- **FHA limit:** ≤ 43%
-- **High risk:** > 43%
+## Risk Assessment Model
 
-#### Loan-to-Income Ratio (LTI)
+### Heuristic Scoring Formula
 
-$$
-\text{LTI} = \frac{\text{Loan Amount}}{\text{Annual Income}}
-$$
+When AI is unavailable, risk is computed as:
 
-- **Conservative:** < 1.5×
-- **Moderate:** 1.5× – 3×
-- **Elevated:** 3× – 4.5×
-- **High:** 4.5× – 6×
-- **Very high:** > 6×
+$$\text{riskScore} = 0.45 + \Delta_{\text{credit}} + \Delta_{\text{DTI}} + \Delta_{\text{LTI}} + \Delta_{\text{employment}}$$
 
-### Heuristic Risk Score
+Clamped to `[0.04, 0.96]`.
 
-When Gemini is unavailable, risk is computed as:
+### Factor Contributions
 
-$$
-\text{riskScore} = 0.45 + \Delta_{\text{credit}} + \Delta_{\text{DTI}} + \Delta_{\text{LTI}} + \Delta_{\text{employment}}
-$$
-
-with contributions from each factor:
-
-| Factor | Tier | Contribution (Δ) |
-|--------|------|------------------|
-| **Credit Score** | 800+ (Exceptional) | −0.22 |
-| | 740–800 (Very Good) | −0.15 |
-| | 670–740 (Good) | −0.06 |
-| | 620–670 (Fair) | +0.10 |
-| | 580–620 (Poor) | +0.20 |
-| | < 580 (Very Poor) | +0.30 |
-| **DTI** | 0–20% (Excellent) | −0.09 |
-| | 20–28% (Good) | −0.04 |
-| | 28–36% (Acceptable) | 0.00 |
-| | 36–43% (Elevated) | +0.10 |
-| | 43–50% (High) | +0.20 |
-| | > 50% (Very High) | +0.32 |
-| **LTI** | < 1.5× (Conservative) | −0.04 |
-| | 1.5×–3× (Moderate) | 0.00 |
-| | 3×–4.5× (Elevated) | +0.05 |
-| | 4.5×–6× (High) | +0.12 |
-| | > 6× (Very High) | +0.22 |
+| Factor | Tier | Δ Risk |
+|--------|------|--------|
+| **Credit Score** | 800+ Exceptional | −0.22 |
+| | 740–800 Very Good | −0.15 |
+| | 670–740 Good | −0.06 |
+| | 620–670 Fair | +0.10 |
+| | 580–620 Poor | +0.20 |
+| | <580 Very Poor | +0.30 |
+| **DTI** | 0–20% Excellent | −0.09 |
+| | 20–28% Good | −0.04 |
+| | 28–36% Acceptable | 0.00 |
+| | 36–43% Elevated | +0.10 |
+| | 43–50% High | +0.20 |
+| | >50% Very High | +0.32 |
+| **LTI** | <1.5× Conservative | −0.04 |
+| | 1.5–3× Moderate | 0.00 |
+| | 3–4.5× Elevated | +0.05 |
+| | 4.5–6× High | +0.12 |
+| | >6× Very High | +0.22 |
 | **Employment** | Full-time | −0.03 |
 | | Self-employed | +0.02 |
 | | Contract | +0.04 |
 | | Part-time | +0.10 |
 | | Unemployed | +0.28 |
 
-**Clamping:** `riskScore` is clamped to `[0.04, 0.96]`.
+### Decision & Confidence
 
-### Approval Probability
+$$\text{decision} = \begin{cases}\text{approved} & \text{riskScore} < 0.50 \\ \text{denied} & \text{riskScore} \geq 0.50\end{cases}$$
 
-$$
-\text{approvalProbability} = 1 - \text{riskScore}
-$$
+$$\text{confidence} = \min\!\left(0.99,\; 0.80 + 0.5 \cdot |\text{riskScore} - 0.50|\right)$$
 
-Also clamped to `[0.04, 0.96]`.
-
-### Decision Rule
-
-$$
-\text{decision} = \begin{cases}
-\text{approved} & \text{if } \text{riskScore} < 0.50 \\
-\text{denied} & \text{if } \text{riskScore} \geq 0.50
-\end{cases}
-$$
-
-### Confidence Score
-
-$$
-\text{confidence} = \min\left(0.99,\; 0.80 + 0.5 \cdot |\text{riskScore} - 0.50|\right)
-$$
-
-Higher margin from the 0.50 threshold increases confidence.
-
-### Bias & Toxicity Detection
-
-The BiasDetector screens generated emails for CFPB compliance:
-
-$$
-\text{passed} = (\text{biasScore} < 0.10) \land (\text{toxicityScore} < 0.10)
-$$
-
-- **biasScore:** 0 = no bias, 1 = severe bias (protected class references, vague denials)
-- **toxicityScore:** 0 = no toxicity, 1 = extremely toxic
-
-### Reduced Loan Offer (DTI Blocker)
-
-When DTI is the main denial factor, a smaller loan may be suggested:
-
-$$
-\text{reducedAmount} = \text{round}\left(\frac{\text{loanAmount} \times 0.75}{1000}\right) \times 1000
-$$
-
-- **75% of requested amount**, rounded to nearest $1,000
-- Minimum: $5,000
-- Must be less than the original requested amount
+$$\text{approvalProbability} = 1 - \text{riskScore} \quad \text{(clamped to [0.04, 0.96])}$$
 
 ---
 
 ## Security
 
-LoanWise AI follows [OWASP API Security Top 10](https://owasp.org/API-Security/) guidelines. The hardening measures below are implemented in `backend/main.py` and `backend/database.py`.
+LoanWise AI follows [OWASP API Security Top 10](https://owasp.org/API-Security/).
 
-### 1. Rate Limiting (per-route)
-
-Every sensitive endpoint carries an individual rate limit enforced by [SlowAPI](https://github.com/laurentS/slowapi) on top of the global 200 req/min ceiling:
+### Per-Route Rate Limiting
 
 | Route | Limit |
 |-------|-------|
-| `POST /user/setup` | 5 / minute |
-| `GET /user/role` | 30 / minute |
-| `POST /loans` | 20 / minute |
-| `PATCH /loans/:id` | 20 / minute |
-| `POST /loans/:id/process` | 10 / minute |
-| `POST /loans/:id/decision` | 10 / minute |
-| `GET /loans/export` | 5 / minute |
-| `GET /loans`, `GET /loans/:id` | 60 / minute |
-| `POST /loan/predict` | 30 / minute |
-| `POST /loan/email` | 10 / minute |
-| `POST /loan/bias-check` | 10 / minute |
-| `POST /loan/recommendation` | 10 / minute |
-| `POST /loan/eligibility-check` | 20 / minute |
-| `POST /loans/:id/documents` | 10 / minute |
-| `GET /loans/:id/documents` | 30 / minute |
-| `POST /recommendations/express-interest` | 10 / minute |
-| `POST /contact` | 5 / minute |
+| `POST /user/setup`, `GET /user/setup-manager`, `POST /contact` | 5 / min |
+| `POST /loan/eligibility-check` | 20 / min |
+| `POST /loans`, `PATCH /loans/:id` | 20 / min |
+| `POST /loans/:id/process`, `POST /loans/:id/decision` | 10 / min |
+| `POST /loan/email`, `POST /loan/bias-check`, `POST /loan/recommendation` | 10 / min |
+| `POST /loan/predict` | 30 / min |
+| `GET /loans`, `GET /loans/:id` | 60 / min |
+| `GET /loans/export` | 5 / min |
+| **Global ceiling** | 200 / min per IP |
 
-Clients that breach a limit receive HTTP `429 Too Many Requests`.
-
-### 2. Security Response Headers (middleware)
-
-A `SecurityHeadersMiddleware` is injected for every API response:
+### Security Headers (every response)
 
 | Header | Value |
 |--------|-------|
@@ -412,56 +414,56 @@ A `SecurityHeadersMiddleware` is injected for every API response:
 | `X-Frame-Options` | `DENY` |
 | `X-XSS-Protection` | `1; mode=block` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
-| `Permissions-Policy` | `geolocation=(), camera=(), microphone=()` |
 | `Cache-Control` | `no-store` |
+| `Permissions-Policy` | `geolocation=(), camera=(), microphone=()` |
+| `Server` | *(stripped)* |
 
-The `Server` response header is stripped to prevent version fingerprinting.
+### Row-Level Security
 
-### 3. Row-Level Security (RLS)
-
-SQLite has no native RLS, so it is enforced in `database.py` via two policy helpers:
+SQLite has no native RLS — it is enforced at the data layer:
 
 ```python
-rls_loan(loan, user_id, role)      # managers see all; customers only own loans
-rls_document(doc, user_id, role)   # same ownership rule for documents
+# Every loan/document read goes through:
+get_loan_scoped(loan_id, user_id, role)
+# → managers see all; customers only see their own loans
+# → returns None (404) on denial — prevents ID enumeration
 ```
 
-A central `get_loan_scoped(loan_id, user_id, role)` function is called by **every** endpoint that reads a loan object. When a customer requests a loan that belongs to another user, the function returns `None` — which the handler responds to with HTTP `404` (not `403`) to prevent ID enumeration.
+### IDOR — Eliminated
 
-### 4. IDOR (Insecure Direct Object References) — Eliminated
+| Endpoint | Fix |
+|----------|-----|
+| `GET/PATCH /loans/:id` | RLS via `get_loan_scoped` |
+| `GET/POST /loans/:id/documents` | RLS via `get_loan_scoped` |
+| `POST /recommendations/express-interest` | Loan ownership verified before recording |
+| `GET /user/role?userId=X` | Production: always scoped to JWT subject |
+| `POST /user/setup` | JWT user must match body `userId` |
 
-| Endpoint | Vulnerability | Fix |
-|----------|--------------|-----|
-| `GET /loans/:id` | Customer could access any loan by ID | RLS via `get_loan_scoped` |
-| `PATCH /loans/:id` | Ownership check bypassed for managerNotes field | RLS via `get_loan_scoped` |
-| `POST /loans/:id/documents` | Any user could upload docs to foreign loan | RLS via `get_loan_scoped` |
-| `GET /loans/:id/documents` | Any user could list docs on foreign loan | RLS via `get_loan_scoped` |
-| `POST /recommendations/express-interest` | Any user could record interest against foreign `loanId` | Ownership verified before recording |
-| `GET /user/role?userId=X` | Any user could enumerate roles of arbitrary users | Production: always scoped to JWT subject |
-| `POST /user/setup` | Authenticated user could register a role for a different `userId` | JWT user must match body `userId`; mismatch returns HTTP `403` |
+### Authentication
 
-### 5. CORS — Tightened
-
-In development the backend accepts `http://localhost:8080` and `http://localhost:5173`. In production set `ALLOWED_ORIGINS` to your exact domain(s). `allow_methods` and `allow_headers` are now explicit allow-lists instead of wildcards.
-
-### 6. Authentication & Authorisation
-
-- **JWT (RS256)** — All tokens issued by Clerk are verified against the JWKS endpoint when `CLERK_JWKS_URL` is set.
-- **Role always from DB** — In production, user roles are looked up from SQLite on every request; the `X-User-Role` client header is never trusted.
-- **Manager secret** — A server-side `MANAGER_SECRET` is required to claim manager role; the default value triggers a startup warning (and blocks startup entirely in `ENVIRONMENT=production`).
+- **JWT RS256** — Clerk tokens verified against JWKS endpoint
+- **Roles from DB** — never trusted from client headers in production
+- **Manager secret** — required to claim manager role; default value blocked at startup in `ENVIRONMENT=production`
 
 ---
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-------------|
-| **Frontend** | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui |
-| **Backend** | FastAPI, Python 3.11+, SQLite |
-| **Auth** | Clerk |
-| **AI** | Google Gemini 2.5 Flash (with heuristic fallback) |
-| **State** | TanStack Query |
+|-------|-----------|
+| **Frontend** | React 18, TypeScript 5, Vite, Tailwind CSS v3, shadcn/ui |
+| **Routing** | React Router v6 |
+| **State & Fetching** | TanStack Query v5 |
+| **Auth** | Clerk (JWT RS256, role-based) |
+| **Backend** | FastAPI 0.115, Python 3.11+, Uvicorn |
+| **Database** | SQLite (WAL mode) via `sqlite3` |
+| **AI Primary** | Google Gemini 2.5 Flash (`google-genai` SDK) |
+| **AI Fallback** | OpenAI GPT-4o-mini (`openai` SDK) |
+| **Rate Limiting** | SlowAPI |
+| **Animations** | Framer Motion |
+| **Charts** | Recharts |
 | **Testing** | Vitest, Playwright |
+| **Deployment** | Vercel (frontend), Railway (backend) |
 
 ---
 
@@ -469,26 +471,54 @@ In development the backend accepts `http://localhost:8080` and `http://localhost
 
 ```
 loanwise-ai/
-├── backend/                 # FastAPI backend
-│   ├── main.py              # Routes, auth, validation, rate limiting
-│   ├── database.py          # SQLite persistence
-│   ├── pipeline.py          # AI agent pipeline (4 agents)
-│   ├── data.py              # Seed data, product catalog
-│   └── requirements.txt
+├── backend/
+│   ├── main.py              # FastAPI app — routes, auth, middleware, rate limiting
+│   ├── pipeline.py          # AI agent pipeline (5 agents, LLM orchestration)
+│   ├── database.py          # SQLite layer with RLS helpers
+│   ├── data.py              # Seed loans, agent logs, product catalog
+│   ├── requirements.txt
+│   └── railway.json         # Railway deployment config
+│
 ├── src/
-│   ├── pages/               # React pages
-│   │   ├── LandingPage.tsx
-│   │   ├── portal/          # Customer portal (applications, status)
-│   │   └── (dashboard)      # Manager views
-│   ├── components/          # Shared UI (RiskMeter, etc.)
-│   ├── hooks/               # TanStack Query hooks
-│   ├── lib/                 # API client, mock client
-│   └── types/               # TypeScript types
+│   ├── pages/
+│   │   ├── LandingPage.tsx         # Public landing
+│   │   ├── AboutPage.tsx           # About + Security section
+│   │   ├── HelpPage.tsx
+│   │   ├── EligibilityPage.tsx     # Public eligibility checker
+│   │   ├── portal/
+│   │   │   ├── PortalLayout.tsx    # Customer shell
+│   │   │   ├── CustomerHomePage.tsx
+│   │   │   ├── LoanApplicationFormPage.tsx
+│   │   │   └── ApplicationStatusPage.tsx
+│   │   └── dashboard/              # Manager views
+│   │       ├── DashboardPage.tsx
+│   │       ├── LoanDetailPage.tsx
+│   │       └── SettingsPage.tsx
+│   ├── components/
+│   │   ├── AppSidebar.tsx
+│   │   ├── ApiBanner.tsx
+│   │   ├── PublicPageLayout.tsx
+│   │   └── ui/                     # shadcn/ui components
+│   ├── hooks/
+│   │   ├── useLoans.ts
+│   │   ├── useMyLoans.ts
+│   │   └── useUserRole.ts
+│   ├── lib/
+│   │   ├── api-client.ts           # Authenticated fetch wrapper
+│   │   ├── api/loans.ts            # Loan API functions
+│   │   └── mock-client.ts          # Dev mock data
+│   └── types/loan.ts
+│
 ├── docs/
-│   ├── api-spec.md          # Full API reference
-│   ├── agent-workflow.md    # Pipeline details
-│   └── architecture.md     # System architecture
-└── package.json
+│   ├── DEPLOYMENT.md
+│   ├── RAILWAY-FULL-STACK.md
+│   ├── api-spec.md
+│   └── architecture.md
+│
+├── Caddyfile                # Static file serving (Railway/Caddy)
+├── package.json
+├── vite.config.ts
+└── README.md
 ```
 
 ---
@@ -499,53 +529,55 @@ loanwise-ai/
 
 - **Node.js** 18+
 - **Python** 3.11+
-- **npm** (or pnpm/yarn)
+- A **Clerk** account ([dashboard.clerk.com](https://dashboard.clerk.com))
+- A **Gemini API key** ([aistudio.google.com](https://aistudio.google.com/app/apikey)) (optional — heuristics work without it)
 
 ### 1. Clone and install
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/your-username/loanwise-ai.git
 cd loanwise-ai
 npm install
 cd backend && pip install -r requirements.txt && cd ..
 ```
 
-### 2. Configure environment variables
-
-Copy `.env.example` to `.env.local` (frontend) and ensure `backend/.env` exists for the backend:
+### 2. Configure environment
 
 ```bash
 cp .env.example .env.local
 ```
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `VITE_CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key ([dashboard.clerk.com](https://dashboard.clerk.com)) |
-| `CLERK_SECRET_KEY` | Production | Clerk secret key |
-| `GOOGLE_API_KEY` | Optional | Enables Gemini AI pipeline ([aistudio.google.com](https://aistudio.google.com/app/apikey)) |
-| `MANAGER_SECRET` | Production | Secret to claim manager role (default dev: `loanwise-manager-2026`) |
-| `CLERK_JWKS_URL` | Production | Clerk JWKS for JWT verification |
+Edit `.env.local`:
 
-### 3. Run in development
+```env
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_xxxxx
+GOOGLE_API_KEY=your-gemini-key
+OPENAI_API_KEY=your-openai-key   # optional fallback
+CLERK_SECRET_KEY=sk_test_xxxxx
+```
+
+### 3. Start the stack
 
 ```bash
 npm run dev:all
 ```
 
-Starts:
-
-- **Frontend:** [http://localhost:5173](http://localhost:5173)
-- **Backend:** [http://localhost:8000](http://localhost:8000)
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:8080 |
+| Backend API | http://localhost:8000 |
+| API Docs | http://localhost:8000/docs |
 
 ### 4. Claim manager access
 
 1. Sign up at `/sign-up`
-2. Go to `/claim-manager`
-3. Enter `MANAGER_SECRET` (default dev: `loanwise-manager-2026`)
+2. Visit `/claim-manager`
+3. Enter `loanwise-manager-2026` (default dev secret)
+4. Refresh — you now have manager dashboard access
 
-### Mock mode (no backend)
+### Mock mode
 
-Set `VITE_USE_MOCK_DATA=true` in `.env.local` to use local fixture data without the backend.
+Set `VITE_USE_MOCK_DATA=true` in `.env.local` to run the frontend entirely on local fixture data (no backend needed).
 
 ---
 
@@ -553,61 +585,77 @@ Set `VITE_USE_MOCK_DATA=true` in `.env.local` to use local fixture data without 
 
 ### Frontend (`.env.local`)
 
-| Variable | Description |
-|----------|-------------|
-| `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
-| `VITE_API_URL` | Backend base URL (default: proxied to `/api`) |
-| `VITE_DEV_SKIP_AUTH` | Skip Clerk sign-in (dev only) |
-| `VITE_USE_MOCK_DATA` | Use mock data instead of backend (dev only) |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VITE_CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key |
+| `VITE_API_URL` | Production | Backend URL (e.g. `https://your-backend.railway.app`) — leave unset locally to use the Vite proxy |
+| `VITE_DEV_SKIP_AUTH` | Dev only | `true` to bypass Clerk sign-in locally |
+| `VITE_USE_MOCK_DATA` | Dev only | `true` to use fixture data without the backend |
 
-### Backend (`backend/.env`)
+### Backend (`backend/.env` or Railway Variables)
 
-| Variable | Description |
-|----------|-------------|
-| `GOOGLE_API_KEY` | Enables Gemini AI pipeline |
-| `CLERK_SECRET_KEY` | Clerk server-side secret |
-| `CLERK_JWKS_URL` | JWT verification endpoint |
-| `MANAGER_SECRET` | Secret for manager role claim |
-| `ALLOWED_ORIGINS` | Comma-separated CORS origins |
-| `ENVIRONMENT` | `production` for strict checks |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GOOGLE_API_KEY` | For AI | Gemini API key |
+| `OPENAI_API_KEY` | Optional | Fallback when Gemini fails |
+| `CLERK_SECRET_KEY` | Production | Clerk server-side secret |
+| `CLERK_JWKS_URL` | Production | `https://your-app.clerk.accounts.dev/.well-known/jwks.json` |
+| `MANAGER_SECRET` | Production | Strong secret for manager role claim (must not be default in production) |
+| `ALLOWED_ORIGINS` | Production | Comma-separated frontend URL(s) |
+| `ENVIRONMENT` | Production | Set to `production` to enforce security startup checks |
+
+---
+
+## API Reference
+
+Interactive Swagger UI: **`http://localhost:8000/docs`**
+
+### Endpoints Summary
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| `GET` | `/health` | — | Health check + DB and AI status |
+| `POST` | `/user/setup` | — | Register user role (manager requires secret) |
+| `GET` | `/user/role` | Customer | Get own role |
+| `POST` | `/loans` | Customer | Submit loan application |
+| `GET` | `/loans` | Customer/Manager | List loans (scoped by role) |
+| `GET` | `/loans/:id` | Customer/Manager | Get single loan (RLS enforced) |
+| `PATCH` | `/loans/:id` | Customer/Manager | Withdraw or add manager notes |
+| `POST` | `/loans/:id/process` | Manager | Trigger AI pipeline |
+| `POST` | `/loans/:id/decision` | Manager | Submit approve/deny decision |
+| `GET` | `/loans/:id/audit` | Manager | Full audit trail |
+| `GET` | `/loans/export` | Manager | CSV export |
+| `POST` | `/loans/:id/documents` | Customer | Upload + verify document |
+| `POST` | `/loan/predict` | Customer | Standalone risk prediction |
+| `POST` | `/loan/email` | Customer | Standalone email generation |
+| `POST` | `/loan/bias-check` | Customer | Standalone bias check |
+| `POST` | `/loan/recommendation` | Customer | Standalone recommendations |
+| `POST` | `/loan/eligibility-check` | — | Public pre-application check |
+| `GET` | `/analytics` | Manager | Full analytics bundle |
+| `POST` | `/contact` | — | Contact form submission |
 
 ---
 
 ## Deployment
 
-See **[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)** for full deployment instructions. Options include:
+### Recommended: Vercel (frontend) + Railway (backend)
 
-- **Railway** — full stack (frontend + backend)
-- **Vercel + Railway** — frontend on Vercel, backend on Railway
-- **Docker** — self-hosted on VPS, Fly.io, etc.
+**Backend on Railway:**
+1. New project → Deploy from GitHub → root directory: `backend`
+2. Add env vars: `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `CLERK_SECRET_KEY`, `CLERK_JWKS_URL`, `MANAGER_SECRET`, `ALLOWED_ORIGINS`, `ENVIRONMENT=production`
+3. Generate domain → note the URL
 
-**Production essentials:** Set `VITE_API_URL`, `CLERK_JWKS_URL`, `MANAGER_SECRET`, `ALLOWED_ORIGINS`, and `ENVIRONMENT=production`.
+**Frontend on Vercel:**
+1. Import repo → Framework: Vite → output: `dist`
+2. Add env vars: `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_API_URL` (= Railway URL with `https://`)
+3. Deploy → add Vercel domain to Clerk Dashboard → Domains
 
----
+**CORS:** Set `ALLOWED_ORIGINS` on Railway to your exact Vercel URL (no trailing slash).
 
-## API Documentation
-
-Interactive docs are available at **http://localhost:8000/docs** when the backend is running.
-
-See [`docs/api-spec.md`](docs/api-spec.md) for the full endpoint reference, including:
-
-- Health, User, Settings, Notifications
-- Loans (CRUD, process, decision, export)
-- AI endpoints (predict, email, recommendation, bias-check)
-- Analytics (stats, trends, agent logs)
-- Recommendations catalog
-
----
-
-## Running Tests
-
-```bash
-npm test              # Unit tests (Vitest)
-npm run test:e2e      # End-to-end tests (Playwright)
-```
+See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for full instructions including Docker self-hosting.
 
 ---
 
 ## License
 
-MIT
+MIT © LoanWise AI
