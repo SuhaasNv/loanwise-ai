@@ -14,6 +14,8 @@ export interface PlatformSettings {
   riskThreshold: number;
   minCreditScore: number;
   maxDti: number;
+  // Pipeline
+  autoProcessLoans: boolean;
   // Bias
   biasThreshold: number;
   autoRegenerate: boolean;
@@ -31,6 +33,7 @@ export const DEFAULTS: PlatformSettings = {
   riskThreshold: 50,
   minCreditScore: 620,
   maxDti: 0.43,
+  autoProcessLoans: false,
   biasThreshold: 10,
   autoRegenerate: true,
   protectedCategoryScreening: true,

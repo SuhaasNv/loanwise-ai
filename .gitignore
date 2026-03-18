@@ -2,6 +2,23 @@
 .env
 .env.local
 .env.*.local
+.env.development
+.env.production
+backend/.env
+credentials.json
+*.pem
+
+# Database (contains user data)
+*.db
+backend/loanwise.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.Python
+*.so
 
 # Logs
 logs

@@ -213,6 +213,7 @@ export default function SettingsPage() {
         <TabsList className="h-9 flex-wrap">
           <TabsTrigger value="model" className="text-xs">LLM Configuration</TabsTrigger>
           <TabsTrigger value="risk" className="text-xs">Risk Thresholds</TabsTrigger>
+          <TabsTrigger value="pipeline" className="text-xs">Pipeline</TabsTrigger>
           <TabsTrigger value="bias" className="text-xs">Bias Detection</TabsTrigger>
           <TabsTrigger value="email" className="text-xs">Email Templates</TabsTrigger>
           <TabsTrigger value="catalog" className="text-xs">Product Catalog</TabsTrigger>
@@ -325,6 +326,45 @@ export default function SettingsPage() {
               <Button size="sm" className="text-xs gap-1.5" onClick={() => handleSave("Risk thresholds")} disabled={isSaving}>
                 {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 Save Thresholds
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Pipeline ────────────────────────────────────────────────────── */}
+        <TabsContent value="pipeline">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Pipeline Automation</CardTitle>
+              <CardDescription className="text-xs">Control how the AI pipeline is triggered for new loan applications</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between rounded-lg border bg-secondary/20 p-4">
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Auto-Process New Applications</Label>
+                  <p className="text-[10px] text-muted-foreground max-w-xs">
+                    When enabled, the AI pipeline starts automatically when a new loan application is submitted.
+                    Managers no longer need to manually trigger processing. Recommended for high-volume operations.
+                  </p>
+                </div>
+                <Switch
+                  checked={!!settings.autoProcessLoans}
+                  onCheckedChange={(v) => updateSettings({ autoProcessLoans: v })}
+                />
+              </div>
+              {settings.autoProcessLoans && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
+                  <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                  <span>
+                    Auto-processing is active. New applications will be processed immediately without a manager trigger.
+                    Managers still make the final approve/deny decision.
+                  </span>
+                </div>
+              )}
+              <Separator />
+              <Button size="sm" className="text-xs gap-1.5" onClick={() => handleSave("Pipeline settings")} disabled={isSaving}>
+                {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                Save Pipeline Settings
               </Button>
             </CardContent>
           </Card>

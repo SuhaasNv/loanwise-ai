@@ -15,7 +15,7 @@ export default function PortalLayout() {
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
           <div className="flex items-center gap-6">
             <Link
-              to="/"
+              to="/portal"
               className="flex items-center gap-2 transition-opacity hover:opacity-90"
             >
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-sm">
@@ -41,7 +41,7 @@ export default function PortalLayout() {
                 My Applications
               </NavLink>
               <Link
-                to="/about"
+                to="/help"
                 className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
               >
                 <HelpCircle className="h-3.5 w-3.5" />

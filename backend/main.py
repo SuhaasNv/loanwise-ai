@@ -17,11 +17,12 @@ from typing import Annotated, Literal, Optional
 import jwt as pyjwt
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, EmailStr, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
 
 import database as db
 from pipeline import run_pipeline
@@ -43,6 +44,28 @@ app = FastAPI(title="Loanwise AI API", version="2.0.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# ─── Security headers middleware ───────────────────────────────────────────────
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """
+    Adds security response headers to every API response.
+    Protects against clickjacking, MIME sniffing, XSS, and information leakage.
+    """
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"]  = "nosniff"
+        response.headers["X-Frame-Options"]         = "DENY"
+        response.headers["X-XSS-Protection"]        = "1; mode=block"
+        response.headers["Referrer-Policy"]         = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"]      = "geolocation=(), camera=(), microphone=()"
+        response.headers["Cache-Control"]           = "no-store"
+        # Remove server fingerprinting (MutableHeaders uses del, not pop)
+        if "server" in response.headers:
+            del response.headers["server"]
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 
 _allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
@@ -56,8 +79,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 # ─── Init ─────────────────────────────────────────────────────────────────────
@@ -351,6 +375,59 @@ class ProductCatalogItem(BaseModel):
     enabled: bool = True
 
 
+class EligibilityCheckRequest(BaseModel):
+    income: float
+    creditScore: int
+    loanAmount: float
+    employmentType: str
+    debtToIncomeRatio: float = 0.35
+    loanPurpose: str = "Personal"
+
+    @field_validator("creditScore")
+    @classmethod
+    def validate_credit_score(cls, v: int) -> int:
+        if not (300 <= v <= 850):
+            raise ValueError("creditScore must be between 300 and 850")
+        return v
+
+    @field_validator("income")
+    @classmethod
+    def validate_income(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("income must be non-negative")
+        return v
+
+    @field_validator("loanAmount")
+    @classmethod
+    def validate_loan_amount(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("loanAmount must be positive")
+        return v
+
+    @field_validator("debtToIncomeRatio")
+    @classmethod
+    def validate_dti(cls, v: float) -> float:
+        if not (0 <= v <= 1):
+            raise ValueError("debtToIncomeRatio must be between 0 and 1")
+        return v
+
+
+class ContactRequest(BaseModel):
+    name: str
+    email: EmailStr
+    subject: str
+    message: str
+
+
+class DocumentUploadRequest(BaseModel):
+    loanId: str
+    docType: str  # payslip | nric | bank_statement | employment_letter
+    filename: str
+    contentBase64: Optional[str] = None  # base64-encoded document for AI extraction
+    declaredIncome: Optional[float] = None
+    declaredName: Optional[str] = None
+
+
 # ─── Health ───────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -379,30 +456,60 @@ def health():
 # ─── User Setup ───────────────────────────────────────────────────────────────
 
 @app.post("/user/setup")
-def user_setup(req: UserSetupRequest):
+@limiter.limit("5/minute")
+def user_setup(
+    req: UserSetupRequest,
+    request: Request,
+    verified_id: Optional[str] = Depends(get_verified_user_id),
+    x_user_id: Optional[str] = Header(default=None),
+):
     """
     Assign a role to a user. Role is stored in local SQLite.
     Managers must provide the correct managerSecret.
+    In production (JWT verified), the userId is derived from the JWT — the
+    body's userId field is ignored to prevent IDOR privilege escalation.
     """
+    # In production: always use the verified identity, never trust the body
+    effective_user_id = verified_id or x_user_id or req.userId
+
     if req.role == "manager":
         if req.managerSecret != MANAGER_SECRET:
             raise HTTPException(status_code=403, detail="Invalid manager secret")
-    db.upsert_user_role(req.userId, "", req.role)
-    logger.info("User %s assigned role: %s", req.userId, req.role)
-    return {"userId": req.userId, "role": req.role, "success": True}
+
+    # In production, prevent a user from setting up a different user's account
+    if verified_id and verified_id != req.userId:
+        logger.warning(
+            "IDOR attempt blocked: JWT user %s tried to setup userId %s",
+            verified_id, req.userId
+        )
+        raise HTTPException(status_code=403, detail="Cannot set up another user's account")
+
+    db.upsert_user_role(effective_user_id, "", req.role)
+    logger.info("User %s assigned role: %s", effective_user_id, req.role)
+    return {"userId": effective_user_id, "role": req.role, "success": True}
 
 
 @app.get("/user/role")
+@limiter.limit("30/minute")
 def get_user_role_endpoint(
-    user_id: Optional[str] = Depends(get_user_id),
+    request: Request,
+    verified_id: Optional[str] = Depends(get_verified_user_id),
+    x_user_id: Optional[str] = Header(default=None),
     userId: Optional[str] = Query(default=None),
 ):
     """
     Return the stored role for the authenticated user.
-    In production (JWT verified), only returns the caller's own role.
-    In dev mode, accepts ?userId= query param for convenience.
+    In production (JWT verified): always returns the caller's own role — ignores
+    any userId query param to prevent IDOR enumeration.
+    In dev mode: accepts ?userId= or X-User-Id header for convenience.
     """
-    effective_id = user_id or userId
+    if verified_id:
+        # Production: always scope to the JWT subject — never trust the query param
+        role = db.get_user_role(verified_id)
+        return {"userId": verified_id, "role": role}
+
+    # Dev mode: accept header or query param
+    effective_id = x_user_id or userId
     if not effective_id:
         raise HTTPException(status_code=400, detail="userId is required")
     role = db.get_user_role(effective_id)
@@ -410,7 +517,8 @@ def get_user_role_endpoint(
 
 
 @app.get("/user/setup-manager")
-def setup_manager_via_url(userId: str, secret: str):
+@limiter.limit("5/minute")
+def setup_manager_via_url(request: Request, userId: str, secret: str):
     """Dev-only: grant manager role via GET."""
     if secret != MANAGER_SECRET:
         raise HTTPException(status_code=403, detail="Invalid secret")
@@ -470,6 +578,7 @@ def get_notifications(_role: str = Depends(require_manager)):
 def create_loan(
     req: CreateLoanRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     user_id: Optional[str] = Depends(get_user_id),
 ):
     """
@@ -510,20 +619,31 @@ def create_loan(
     db.insert_loan(loan)
     db.insert_audit_log(loan_id, effective_user_id, "submitted", f"Application submitted for ${req.loanAmount:,.0f}")
     logger.info("Loan created: %s for user %s (amount=$%.0f)", loan_id, effective_user_id, req.loanAmount)
+
+    # Auto-process: if setting enabled, immediately start AI pipeline
+    settings = db.get_settings()
+    if settings.get("autoProcessLoans") is True:
+        db.update_loan(loan_id, {"status": "processing"})
+        db.insert_audit_log(loan_id, "system", "processing_started", "Auto-processing triggered by system setting")
+        background_tasks.add_task(_run_pipeline_bg, loan_id, loan, "system")
+        loan["status"] = "processing"
+
     return loan
 
 
 @app.patch("/loans/{loan_id}")
+@limiter.limit("20/minute")
 def patch_loan(
     loan_id: str,
     req: PatchLoanRequest,
+    request: Request,
     user_id: Optional[str] = Depends(get_user_id),
     role: str = Depends(get_user_role),
 ):
     """
     Partial update: withdrawal (customers) or manager notes (managers).
     """
-    loan = db.get_loan_by_id(loan_id)
+    loan = db.get_loan_scoped(loan_id, user_id, role)
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
 
@@ -547,6 +667,31 @@ def patch_loan(
         return loan
 
     return db.update_loan(loan_id, updates)
+
+
+def _send_decision_notification(loan: dict, decision_label: str) -> None:
+    """
+    Log a notification that would be sent via email in a production environment.
+    In production, integrate with Resend, SendGrid, or AWS SES here.
+    """
+    applicant_email = loan.get("applicantEmail", "")
+    applicant_name = loan.get("applicantName", "Applicant")
+    loan_id = loan.get("id", "")
+    loan_amount = loan.get("loanAmount", 0)
+
+    logger.info(
+        "[NOTIFICATION] Would send email to %s (%s): Loan %s — AI has completed analysis. "
+        "AI recommends: %s for $%.0f. Awaiting final manager approval.",
+        applicant_email, applicant_name, loan_id, decision_label, loan_amount
+    )
+    # Production hook:
+    # import resend
+    # resend.Emails.send({
+    #   "from": "noreply@loanwise.ai",
+    #   "to": applicant_email,
+    #   "subject": f"Update on your loan application ({loan_id})",
+    #   "text": f"Dear {applicant_name},\n\nYour loan application has been reviewed by our AI system. ..."
+    # })
 
 
 def _run_pipeline_bg(loan_id: str, loan: dict, user_id: str) -> None:
@@ -586,6 +731,10 @@ def _run_pipeline_bg(loan_id: str, loan: dict, user_id: str) -> None:
                 f"AI analysis complete: recommends {ai_rec} (risk={pipeline_result['riskScore']:.2f}). Awaiting manager decision."
             )
             logger.info("Pipeline complete for %s (attempt %d): recommends=%s", loan_id, attempt, ai_rec)
+
+            # Notify applicant that analysis is complete
+            updated_loan = db.get_loan_by_id(loan_id) or loan
+            _send_decision_notification(updated_loan, ai_rec)
             return
         except Exception as exc:
             logger.warning("Pipeline attempt %d/%d failed for %s: %s", attempt, PIPELINE_MAX_RETRIES, loan_id, exc)
@@ -598,8 +747,10 @@ def _run_pipeline_bg(loan_id: str, loan: dict, user_id: str) -> None:
 
 
 @app.post("/loans/{loan_id}/process")
+@limiter.limit("10/minute")
 def process_loan(
     loan_id: str,
+    request: Request,
     background_tasks: BackgroundTasks,
     user_id: Optional[str] = Depends(get_user_id),
     _role: str = Depends(require_manager),
@@ -608,7 +759,7 @@ def process_loan(
     Manager triggers the AI pipeline for a queued loan.
     Returns immediately with status='processing'; pipeline runs in background.
     """
-    loan = db.get_loan_by_id(loan_id)
+    loan = db.get_loan_scoped(loan_id, user_id, "manager")
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
     if loan["status"] == "completed":
@@ -628,9 +779,11 @@ def process_loan(
 
 
 @app.post("/loans/{loan_id}/decision")
+@limiter.limit("10/minute")
 def submit_decision(
     loan_id: str,
     req: SubmitDecisionRequest,
+    request: Request,
     user_id: Optional[str] = Depends(get_user_id),
     _role: str = Depends(require_manager),
 ):
@@ -640,7 +793,7 @@ def submit_decision(
     """
     decision = req.decision.lower()
 
-    loan = db.get_loan_by_id(loan_id)
+    loan = db.get_loan_scoped(loan_id, user_id, "manager")
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
     if loan["status"] != "pending_review":
@@ -666,11 +819,23 @@ def submit_decision(
         f"(AI recommended {ai_rec or 'N/A'})"
     )
     logger.info("Decision submitted for loan %s: %s (AI rec: %s)", loan_id, decision, ai_rec or "N/A")
-    return db.get_loan_by_id(loan_id)
+
+    # Notify applicant of final decision
+    final_loan = db.get_loan_by_id(loan_id) or loan
+    applicant_email = final_loan.get("applicantEmail", "")
+    applicant_name = final_loan.get("applicantName", "Applicant")
+    logger.info(
+        "[NOTIFICATION] Would send final decision email to %s (%s): Loan %s — %s",
+        applicant_email, applicant_name, loan_id, decision.upper()
+    )
+
+    return final_loan
 
 
 @app.get("/loans/export")
+@limiter.limit("5/minute")
 def export_loans(
+    request: Request,
     search: Optional[str] = None,
     decision: Optional[str] = None,
     format: str = Query(default="csv"),
@@ -697,9 +862,11 @@ def export_loans(
 
 
 @app.get("/loans")
+@limiter.limit("60/minute")
 def list_loans(
+    request: Request,
     page: int = 1,
-    limit: int = Query(default=20, le=500),
+    limit: int = Query(default=20, le=100),
     search: Optional[str] = None,
     decision: Optional[str] = None,
     userId: Optional[str] = None,
@@ -737,22 +904,22 @@ def get_loan_audit(loan_id: str, _role: str = Depends(require_manager)):
 
 
 @app.get("/loans/{loan_id}")
+@limiter.limit("60/minute")
 def get_loan(
     loan_id: str,
+    request: Request,
     user_id: Optional[str] = Depends(get_user_id),
     role: str = Depends(get_user_role),
 ):
     """
     Get a single loan.
     Customers may only access their own loans; managers can access any.
+    RLS is enforced by db.get_loan_scoped — returns 404 for both not-found
+    and access-denied to prevent enumeration of foreign loan IDs.
     """
-    loan = db.get_loan_by_id(loan_id)
+    loan = db.get_loan_scoped(loan_id, user_id, role)
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
-
-    if role != "manager" and loan.get("userId") and loan["userId"] != user_id:
-        raise HTTPException(status_code=403, detail="Access denied")
-
     return loan
 
 
@@ -775,8 +942,10 @@ def predict_loan(
 
 
 @app.post("/loan/email")
+@limiter.limit("10/minute")
 def generate_email_endpoint(
     req: LoanEmailRequest,
+    request: Request,
     _user_id: str = Depends(require_auth),
 ):
     from pipeline import generate_email_text, check_bias_heuristic
@@ -786,8 +955,10 @@ def generate_email_endpoint(
 
 
 @app.post("/loan/bias-check")
+@limiter.limit("10/minute")
 def check_bias(
     req: BiasCheckRequest,
+    request: Request,
     _user_id: str = Depends(require_auth),
 ):
     from pipeline import check_bias_heuristic
@@ -801,8 +972,10 @@ def check_bias(
 
 
 @app.post("/loan/recommendation")
+@limiter.limit("10/minute")
 def get_recommendations_endpoint(
     req: LoanRecommendationRequest,
+    request: Request,
     _user_id: str = Depends(require_auth),
 ):
     from pipeline import get_product_recommendations
@@ -877,11 +1050,20 @@ def get_recommendations_catalog():
 
 
 @app.post("/recommendations/express-interest")
+@limiter.limit("10/minute")
 def express_interest(
     req: ExpressInterestRequest,
+    request: Request,
     user_id: str = Depends(require_auth),
 ):
-    """Track that a user expressed interest in a recommended product."""
+    """
+    Track that a user expressed interest in a recommended product.
+    RLS: verified that the loanId belongs to the authenticated user before recording.
+    """
+    role = db.get_user_role(user_id)
+    loan = db.get_loan_scoped(req.loanId, user_id, role)
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
     db.track_recommendation_interest(req.loanId, req.productName, user_id)
     return {"success": True, "message": f"Interest in '{req.productName}' recorded. A loan officer will follow up shortly."}
 
@@ -907,6 +1089,154 @@ def update_catalog_settings(
 @app.get("/analytics/recommendation-clicks")
 def get_recommendation_clicks(_role: str = Depends(require_manager)):
     return db.compute_recommendation_interest_analytics()
+
+
+# ─── Document Intelligence ────────────────────────────────────────────────────
+
+VALID_DOC_TYPES = frozenset(["payslip", "nric", "bank_statement", "employment_letter", "other"])
+
+
+@app.post("/loans/{loan_id}/documents")
+@limiter.limit("10/minute")
+def upload_document(
+    loan_id: str,
+    req: DocumentUploadRequest,
+    request: Request,
+    user_id: Optional[str] = Depends(get_user_id),
+    role: str = Depends(get_user_role),
+):
+    """
+    Upload and AI-verify a supporting document for a loan application.
+    Runs DocumentVerifier agent to extract fields and cross-check with declared data.
+    """
+    loan = db.get_loan_scoped(loan_id, user_id, role)
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+
+    doc_type = req.docType.lower().replace(" ", "_")
+    if doc_type not in VALID_DOC_TYPES:
+        doc_type = "other"
+
+    # Store document record
+    doc = db.insert_loan_document(loan_id, user_id or "", doc_type, req.filename)
+
+    # Run DocumentVerifier agent if content provided
+    if req.contentBase64:
+        from pipeline import verify_document
+        try:
+            result = verify_document(
+                req.contentBase64, doc_type, loan_id,
+                declared_income=req.declaredIncome,
+                declared_name=req.declaredName,
+            )
+            db.update_loan_document(doc["id"], result.get("extractedFields", {}), result)
+            db.insert_audit_log(
+                loan_id, user_id or "", "document_verified",
+                f"Document '{req.filename}' ({doc_type}) verified — passed={result.get('passed')}",
+            )
+            logger.info("Document %s verified for loan %s: passed=%s", req.filename, loan_id, result.get("passed"))
+            return {**doc, "verificationResult": result, "status": "verified"}
+        except Exception as exc:
+            logger.warning("Document verification failed for %s: %s", loan_id, exc)
+
+    return {**doc, "status": "uploaded"}
+
+
+@app.get("/loans/{loan_id}/documents")
+@limiter.limit("30/minute")
+def get_loan_documents(
+    loan_id: str,
+    request: Request,
+    user_id: Optional[str] = Depends(get_user_id),
+    role: str = Depends(get_user_role),
+):
+    """Get all documents uploaded for a loan."""
+    loan = db.get_loan_scoped(loan_id, user_id, role)
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+    return db.get_documents_for_loan(loan_id)
+
+
+# ─── Eligibility Checker ──────────────────────────────────────────────────────
+
+@app.post("/loan/eligibility-check")
+@limiter.limit("20/minute")
+def eligibility_check(req: EligibilityCheckRequest, request: Request):
+    """
+    Public pre-application eligibility check.
+    Uses the heuristic RiskAssessor model — no Gemini, no auth, instant results.
+    Returns approval probability, risk score, top blockers, and suggestions.
+    """
+    from pipeline import assess_risk
+
+    result = assess_risk(
+        req.income, req.creditScore, req.loanAmount,
+        req.debtToIncomeRatio, req.employmentType, req.loanPurpose,
+    )
+
+    # Identify top blockers (negative factors sorted by contribution descending)
+    blockers = sorted(
+        [f for f in result.factors if f.get("impact") == "negative"],
+        key=lambda f: f.get("contribution", 0),
+        reverse=True,
+    )
+
+    # Build actionable suggestions
+    suggestions = []
+    for f in blockers[:3]:
+        name = f.get("name", "")
+        if "Credit" in name:
+            suggestions.append("Improving your credit score by 50+ points could significantly increase approval odds.")
+        elif "DTI" in name or "Debt" in name:
+            suggestions.append("Reducing monthly debts or choosing a smaller loan amount would lower your DTI ratio.")
+        elif "Loan-to-Income" in name or "LTI" in name:
+            suggestions.append("Consider requesting a smaller loan amount relative to your annual income.")
+        elif "Employment" in name:
+            suggestions.append("Full-time or salaried employment tends to qualify for better loan terms.")
+
+    # Suggested loan amount: reduce until risk < 0.50 (max 3 tries, 20% reduction each)
+    suggested_amount = None
+    if result.decision == "denied":
+        trial_amount = req.loanAmount
+        for _ in range(3):
+            trial_amount = round(trial_amount * 0.80 / 1000) * 1000
+            if trial_amount < 5000:
+                break
+            trial = assess_risk(
+                req.income, req.creditScore, trial_amount,
+                req.debtToIncomeRatio, req.employmentType, req.loanPurpose,
+            )
+            if trial.decision == "approved":
+                suggested_amount = trial_amount
+                suggestions.insert(0, f"Applying for ${suggested_amount:,.0f} instead may qualify under current guidelines.")
+                break
+
+    return {
+        "riskScore": result.risk_score,
+        "approvalProbability": result.approval_probability,
+        "decision": result.decision,
+        "confidence": result.confidence,
+        "factors": result.factors,
+        "blockers": blockers,
+        "suggestions": suggestions,
+        "suggestedLoanAmount": suggested_amount,
+        "message": (
+            "Great news — based on your profile, you're likely to qualify!"
+            if result.decision == "approved"
+            else "Your profile currently presents some lending challenges. See suggestions below."
+        ),
+    }
+
+
+# ─── Contact Form ─────────────────────────────────────────────────────────────
+
+@app.post("/contact")
+@limiter.limit("5/minute")
+def submit_contact(req: ContactRequest, request: Request):
+    """Store a contact form submission."""
+    record = db.insert_contact_request(req.name, req.email, req.subject, req.message)
+    logger.info("Contact request from %s (%s): %s", req.name, req.email, req.subject)
+    return {"success": True, "id": record["id"], "message": "Your message has been received. We'll respond within 1–2 business days."}
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ import {
 export function useLoans() {
   return useQuery({
     queryKey: ["loans", "all"],
-    queryFn: () => getLoans({ page: 1, limit: 200 }),
+    queryFn: () => getLoans({ page: 1, limit: 100 }),
     select: (data) => data.items,
     staleTime: 30 * 1000,
   });

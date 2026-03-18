@@ -1,21 +1,45 @@
-import { useEffect } from "react";
-import { Mail, MessageCircle, HelpCircle, Info } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Mail, MessageCircle, HelpCircle, Info, Loader2, CheckCircle2, Link as LinkIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { PublicPageLayout } from "@/components/PublicPageLayout";
+import { Link } from "react-router-dom";
+import { apiClient } from "@/lib/api-client";
 
 export default function ContactPage() {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
   useEffect(() => {
     document.title = "Contact — LoanWise AI";
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success("Message received! We'll get back to you within 1–2 business days.");
-    (e.target as HTMLFormElement).reset();
+    const form = e.target as HTMLFormElement;
+    const data = Object.fromEntries(new FormData(form));
+    setIsSubmitting(true);
+    try {
+      await apiClient<{ success: boolean; id: string; message: string }>("/contact", {
+        method: "POST",
+        body: JSON.stringify({
+          name: data.name,
+          email: data.email,
+          subject: data.subject,
+          message: data.message,
+        }),
+      });
+      setSubmitted(true);
+      form.reset();
+      toast.success("Message received! We'll get back to you within 1–2 business days.");
+    } catch {
+      toast.error("Failed to send message. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -30,17 +54,21 @@ export default function ContactPage() {
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-white">Contact Channels</h2>
             {[
-              { icon: Mail, title: "Email Support", value: "support@loanwise.ai", desc: "For account and application queries" },
-              { icon: MessageCircle, title: "General Enquiries", value: "hello@loanwise.ai", desc: "Partnership, press, and feedback" },
-              { icon: HelpCircle, title: "Help Center", value: "Coming soon", desc: "Self-service documentation" },
-            ].map(({ icon: Icon, title, value, desc }) => (
+              { icon: Mail, title: "Email Support", value: "support@loanwise.ai", desc: "For account and application queries", href: null },
+              { icon: MessageCircle, title: "General Enquiries", value: "hello@loanwise.ai", desc: "Partnership, press, and feedback", href: null },
+              { icon: HelpCircle, title: "Help Center", value: "View FAQs →", desc: "Self-service documentation", href: "/help" },
+            ].map(({ icon: Icon, title, value, desc, href }) => (
               <div key={title} className="flex gap-4">
                 <div className="h-10 w-10 rounded-xl bg-cyan-500/10 ring-1 ring-cyan-500/30 flex items-center justify-center shrink-0">
                   <Icon className="h-5 w-5 text-cyan-400" />
                 </div>
                 <div>
                   <p className="font-semibold text-white text-sm">{title}</p>
-                  <p className="text-sm text-cyan-400">{value}</p>
+                  {href ? (
+                    <Link to={href} className="text-sm text-cyan-400 hover:underline">{value}</Link>
+                  ) : (
+                    <p className="text-sm text-cyan-400">{value}</p>
+                  )}
                   <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
                 </div>
               </div>
@@ -49,10 +77,12 @@ export default function ContactPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <h2 className="text-xl font-bold text-white">Send a Message</h2>
-            <div className="flex items-start gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3 text-xs text-cyan-400">
-              <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-              <span>This is a demo application. Messages are not delivered to a real inbox.</span>
-            </div>
+            {submitted && (
+              <div className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-400">
+                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>Your message has been saved. We'll respond within 1–2 business days.</span>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="contact-name" className="text-xs text-slate-300">Name</Label>
@@ -71,7 +101,20 @@ export default function ContactPage() {
               <Label htmlFor="contact-message" className="text-xs text-slate-300">Message</Label>
               <Textarea id="contact-message" placeholder="Describe your query in detail…" rows={5} required className="text-sm resize-none bg-white/5 border-white/10 text-white placeholder:text-slate-600" />
             </div>
-            <Button type="submit" className="w-full bg-cyan-500 text-[#0A0F1C] hover:bg-cyan-400">Send Message</Button>
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full bg-cyan-500 text-[#0A0F1C] hover:bg-cyan-400"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending…
+                </>
+              ) : (
+                "Send Message"
+              )}
+            </Button>
           </form>
         </div>
 

@@ -37,11 +37,25 @@ import { Badge } from "@/components/ui/badge";
 import { useCreateLoan } from "@/hooks/useCreateLoan";
 import { motion, AnimatePresence } from "framer-motion";
 
+// ─── NRIC/FIN validation (Singapore) ──────────────────────────────────────────
+// Format: S/T/F/G/M followed by 7 digits and a letter (case-insensitive)
+
+function validateNric(value: string): boolean {
+  if (!value) return true; // optional field
+  return /^[STFGM]\d{7}[A-Z]$/i.test(value.trim());
+}
+
 // ─── Zod schema ───────────────────────────────────────────────────────────────
 
 const schema = z.object({
   applicantName: z.string().min(2, "Full name is required"),
   applicantEmail: z.string().email("Valid email required"),
+  nric: z
+    .string()
+    .optional()
+    .refine((v) => !v || validateNric(v), {
+      message: "Enter a valid Singapore NRIC/FIN (e.g. S1234567D)",
+    }),
   income: z.coerce.number().min(1000, "Annual income must be at least $1,000"),
   creditScore: z.coerce
     .number()
@@ -77,10 +91,10 @@ function StepIndicator({ current }: { current: number }) {
             aria-label={`Step ${step.id}: ${step.label}${current > step.id ? " (completed)" : current === step.id ? " (current)" : ""}`}
             className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-all duration-200 ${
               current === step.id
-                ? "bg-blue-600 text-white ring-4 ring-blue-100"
+                ? "bg-blue-600 text-white ring-4 ring-blue-100 dark:ring-blue-900"
                 : current > step.id
                 ? "bg-emerald-500 text-white"
-                : "bg-slate-100 text-slate-400"
+                : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500"
             }`}
           >
             {current > step.id ? <CheckCircle2 className="h-4 w-4" /> : step.id}
@@ -88,10 +102,10 @@ function StepIndicator({ current }: { current: number }) {
           <span
             className={`ml-2 mr-1 hidden text-sm font-medium sm:block transition-colors ${
               current === step.id
-                ? "text-blue-700"
+                ? "text-blue-700 dark:text-blue-400"
                 : current > step.id
-                ? "text-emerald-600"
-                : "text-slate-400"
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-slate-400 dark:text-slate-500"
             }`}
           >
             {step.label}
@@ -99,7 +113,7 @@ function StepIndicator({ current }: { current: number }) {
           {i < STEPS.length - 1 && (
             <div
               className={`mx-2 h-0.5 w-8 sm:w-12 transition-colors duration-300 ${
-                current > step.id ? "bg-emerald-400" : "bg-slate-200"
+                current > step.id ? "bg-emerald-400" : "bg-slate-200 dark:bg-slate-700"
               }`}
             />
           )}
@@ -125,8 +139,8 @@ function Field({
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between">
-        <Label className="text-sm font-medium text-slate-700">{label}</Label>
-        {hint && <span className="text-xs text-slate-400">{hint}</span>}
+        <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">{label}</Label>
+        {hint && <span className="text-xs text-slate-400 dark:text-slate-500">{hint}</span>}
       </div>
       {children}
       {error && <p className="text-xs text-red-500">{error}</p>}
@@ -148,9 +162,9 @@ function ReviewSection({
   rows: { label: string; value: React.ReactNode }[];
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50/60 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-100">
-        <span className="text-sm font-semibold text-slate-800">{title}</span>
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-slate-800/80 border-b border-slate-100 dark:border-slate-700">
+        <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{title}</span>
         <button
           type="button"
           onClick={() => onEdit(step)}
@@ -160,14 +174,14 @@ function ReviewSection({
           Edit
         </button>
       </div>
-      <div className="divide-y divide-slate-100">
+      <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
         {rows.map(({ label, value }) => (
           <div
             key={label}
             className="flex items-center justify-between px-4 py-2.5 text-sm"
           >
-            <span className="text-slate-500">{label}</span>
-            <span className="font-medium text-slate-900 text-right">{value}</span>
+            <span className="text-slate-500 dark:text-slate-400">{label}</span>
+            <span className="font-medium text-slate-900 dark:text-slate-100 text-right">{value}</span>
           </div>
         ))}
       </div>
@@ -301,8 +315,8 @@ export default function LoanApplicationFormPage() {
   return (
     <div className="mx-auto max-w-xl">
       <div className="mb-6 text-center">
-        <h1 className="text-2xl font-bold text-slate-900">Loan Application</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Loan Application</h1>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Fill in your details and get an AI-powered decision in minutes.
         </p>
       </div>
@@ -317,8 +331,8 @@ export default function LoanApplicationFormPage() {
           exit={{ opacity: 0, x: -16 }}
           transition={{ duration: 0.2 }}
         >
-          <Card className="border-slate-200 shadow-sm">
-            <CardHeader className="border-b border-slate-100 pb-4">
+          <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
+            <CardHeader className="border-b border-slate-100 dark:border-slate-700 pb-4">
               <CardTitle className="flex items-center gap-2 text-base">
                 {(() => {
                   const s = STEPS[step - 1];
@@ -352,6 +366,56 @@ export default function LoanApplicationFormPage() {
                         className={errors.applicantEmail ? "border-red-400" : ""}
                       />
                     </Field>
+                    <Field
+                      label="NRIC / FIN (optional)"
+                      hint="Singapore residents only"
+                      error={errors.nric?.message}
+                    >
+                      <Input
+                        {...register("nric")}
+                        placeholder="e.g. S1234567D"
+                        className={errors.nric ? "border-red-400" : ""}
+                      />
+                    </Field>
+                    <div className="flex items-start gap-2 rounded-lg border border-blue-100 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/40 p-3 text-xs text-blue-600 dark:text-blue-400">
+                      <ShieldCheck className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        Open to Singapore Citizens, Permanent Residents, and valid Work Pass holders.
+                        Your NRIC is optional and used only for identity verification.
+                      </span>
+                    </div>
+
+                    {/* Document upload */}
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Save className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Supporting Documents{" "}
+                          <span className="text-xs text-slate-400 dark:text-slate-500 font-normal">(optional — speeds up verification)</span>
+                        </p>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {[
+                          { type: "payslip", label: "Latest Payslip" },
+                          { type: "employment_letter", label: "Employment Letter" },
+                          { type: "bank_statement", label: "Bank Statement" },
+                          { type: "nric", label: "NRIC / Work Pass" },
+                        ].map(({ type, label }) => (
+                          <label
+                            key={type}
+                            className="flex items-center gap-2 cursor-pointer rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800/60 px-3 py-2.5 text-xs text-slate-500 dark:text-slate-400 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors group"
+                          >
+                            <input type="file" className="sr-only" accept=".pdf,.jpg,.jpeg,.png" />
+                            <Save className="h-3.5 w-3.5 group-hover:text-blue-500" />
+                            <span>{label}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <p className="text-xs text-slate-400 dark:text-slate-500">
+                        AI-powered document verification extracts and validates data automatically.
+                        Files are encrypted at rest and never shared with third parties.
+                      </p>
+                    </div>
                   </div>
                 )}
 
@@ -364,7 +428,7 @@ export default function LoanApplicationFormPage() {
                       error={errors.income?.message}
                     >
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 text-sm">$</span>
                         <Input
                           {...register("income")}
                           type="number"
@@ -402,7 +466,7 @@ export default function LoanApplicationFormPage() {
                         className={errors.debtToIncomeRatio ? "border-red-400" : ""}
                       />
                     </Field>
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-slate-400 dark:text-slate-500">
                       Tip: a DTI below 36% is generally considered healthy by lenders.
                     </p>
                   </div>
@@ -416,7 +480,7 @@ export default function LoanApplicationFormPage() {
                       error={errors.loanAmount?.message}
                     >
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 text-sm">$</span>
                         <Input
                           {...register("loanAmount")}
                           type="number"
@@ -490,7 +554,7 @@ export default function LoanApplicationFormPage() {
                 {/* Step 4 — Review & Submit */}
                 {step === 4 && (
                   <div className="space-y-5">
-                    <div className="rounded-lg border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-blue-800 flex items-start gap-2.5">
+                    <div className="rounded-lg border border-blue-100 dark:border-blue-900 bg-blue-50/60 dark:bg-blue-950/40 px-4 py-3 text-sm text-blue-800 dark:text-blue-300 flex items-start gap-2.5">
                       <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-blue-500" />
                       <p>
                         Please review your application details carefully. You can edit any
@@ -589,8 +653,8 @@ export default function LoanApplicationFormPage() {
                     <Separator />
 
                     {/* Confirmation */}
-                    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
-                      <p className="text-sm font-semibold text-slate-800">
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 p-4 space-y-3">
+                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                         Confirm & Submit
                       </p>
                       <label className="flex items-start gap-3 cursor-pointer group">
@@ -600,7 +664,7 @@ export default function LoanApplicationFormPage() {
                           onCheckedChange={(v) => setConfirmed(!!v)}
                           className="mt-0.5"
                         />
-                        <span className="text-sm text-slate-600 leading-relaxed">
+                        <span className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
                           I confirm that the information provided is accurate and complete.
                           I understand this application will be reviewed by an AI system and a
                           loan officer. I agree to the{" "}
@@ -627,14 +691,14 @@ export default function LoanApplicationFormPage() {
                     </div>
 
                     {!confirmed && (
-                      <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                      <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900 rounded-lg px-3 py-2">
                         <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                         Please check the confirmation box to submit your application.
                       </div>
                     )}
 
                     {error && (
-                      <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                      <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 p-3 text-sm text-red-600 dark:text-red-400">
                         {(error as Error).message ||
                           "Submission failed. Please try again."}
                       </div>
@@ -693,16 +757,16 @@ export default function LoanApplicationFormPage() {
       </AnimatePresence>
 
       {/* Progress indicator */}
-      <p className="mt-4 text-center text-xs text-slate-400 flex items-center justify-center gap-1.5">
+      <p className="mt-4 text-center text-xs text-slate-400 dark:text-slate-500 flex items-center justify-center gap-1.5">
         Step {step} of {STEPS.length}
         {hasDraft && step < 4 && (
           <>
-            <span className="text-slate-300">·</span>
+            <span className="text-slate-300 dark:text-slate-600">·</span>
             <Save className="h-3 w-3 text-emerald-500" aria-hidden="true" />
             <span className="text-emerald-600">Draft saved</span>
           </>
         )}
-        {step === 4 && <><span className="text-slate-300">·</span> Ready to submit</>}
+        {step === 4 && <><span className="text-slate-300 dark:text-slate-600">·</span> Ready to submit</>}
       </p>
     </div>
   );

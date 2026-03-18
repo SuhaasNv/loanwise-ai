@@ -18,6 +18,7 @@
 - [AI Agents & Orchestration](#ai-agents--orchestration)
 - [Risk Assessment Formulas](#risk-assessment-formulas)
 - [Tech Stack](#tech-stack)
+- [Security](#security)
 - [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
 - [Environment Variables](#environment-variables)
@@ -367,6 +368,86 @@ $$
 - **75% of requested amount**, rounded to nearest $1,000
 - Minimum: $5,000
 - Must be less than the original requested amount
+
+---
+
+## Security
+
+LoanWise AI follows [OWASP API Security Top 10](https://owasp.org/API-Security/) guidelines. The hardening measures below are implemented in `backend/main.py` and `backend/database.py`.
+
+### 1. Rate Limiting (per-route)
+
+Every sensitive endpoint carries an individual rate limit enforced by [SlowAPI](https://github.com/laurentS/slowapi) on top of the global 200 req/min ceiling:
+
+| Route | Limit |
+|-------|-------|
+| `POST /user/setup` | 5 / minute |
+| `GET /user/role` | 30 / minute |
+| `POST /loans` | 20 / minute |
+| `PATCH /loans/:id` | 20 / minute |
+| `POST /loans/:id/process` | 10 / minute |
+| `POST /loans/:id/decision` | 10 / minute |
+| `GET /loans/export` | 5 / minute |
+| `GET /loans`, `GET /loans/:id` | 60 / minute |
+| `POST /loan/predict` | 30 / minute |
+| `POST /loan/email` | 10 / minute |
+| `POST /loan/bias-check` | 10 / minute |
+| `POST /loan/recommendation` | 10 / minute |
+| `POST /loan/eligibility-check` | 20 / minute |
+| `POST /loans/:id/documents` | 10 / minute |
+| `GET /loans/:id/documents` | 30 / minute |
+| `POST /recommendations/express-interest` | 10 / minute |
+| `POST /contact` | 5 / minute |
+
+Clients that breach a limit receive HTTP `429 Too Many Requests`.
+
+### 2. Security Response Headers (middleware)
+
+A `SecurityHeadersMiddleware` is injected for every API response:
+
+| Header | Value |
+|--------|-------|
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+| `X-XSS-Protection` | `1; mode=block` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `geolocation=(), camera=(), microphone=()` |
+| `Cache-Control` | `no-store` |
+
+The `Server` response header is stripped to prevent version fingerprinting.
+
+### 3. Row-Level Security (RLS)
+
+SQLite has no native RLS, so it is enforced in `database.py` via two policy helpers:
+
+```python
+rls_loan(loan, user_id, role)      # managers see all; customers only own loans
+rls_document(doc, user_id, role)   # same ownership rule for documents
+```
+
+A central `get_loan_scoped(loan_id, user_id, role)` function is called by **every** endpoint that reads a loan object. When a customer requests a loan that belongs to another user, the function returns `None` — which the handler responds to with HTTP `404` (not `403`) to prevent ID enumeration.
+
+### 4. IDOR (Insecure Direct Object References) — Eliminated
+
+| Endpoint | Vulnerability | Fix |
+|----------|--------------|-----|
+| `GET /loans/:id` | Customer could access any loan by ID | RLS via `get_loan_scoped` |
+| `PATCH /loans/:id` | Ownership check bypassed for managerNotes field | RLS via `get_loan_scoped` |
+| `POST /loans/:id/documents` | Any user could upload docs to foreign loan | RLS via `get_loan_scoped` |
+| `GET /loans/:id/documents` | Any user could list docs on foreign loan | RLS via `get_loan_scoped` |
+| `POST /recommendations/express-interest` | Any user could record interest against foreign `loanId` | Ownership verified before recording |
+| `GET /user/role?userId=X` | Any user could enumerate roles of arbitrary users | Production: always scoped to JWT subject |
+| `POST /user/setup` | Authenticated user could register a role for a different `userId` | JWT user must match body `userId`; mismatch returns HTTP `403` |
+
+### 5. CORS — Tightened
+
+In development the backend accepts `http://localhost:8080` and `http://localhost:5173`. In production set `ALLOWED_ORIGINS` to your exact domain(s). `allow_methods` and `allow_headers` are now explicit allow-lists instead of wildcards.
+
+### 6. Authentication & Authorisation
+
+- **JWT (RS256)** — All tokens issued by Clerk are verified against the JWKS endpoint when `CLERK_JWKS_URL` is set.
+- **Role always from DB** — In production, user roles are looked up from SQLite on every request; the `X-User-Role` client header is never trusted.
+- **Manager secret** — A server-side `MANAGER_SECRET` is required to claim manager role; the default value triggers a startup warning (and blocks startup entirely in `ENVIRONMENT=production`).
 
 ---
 

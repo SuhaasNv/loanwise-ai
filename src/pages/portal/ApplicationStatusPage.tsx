@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { withdrawLoan, expressInterest } from "@/lib/api/loans";
 import { toast } from "sonner";
+import { WhatIfSimulator } from "@/components/WhatIfSimulator";
 import {
   CheckCircle2,
   XCircle,
@@ -34,13 +35,13 @@ import type { LoanDecision, RiskFactor } from "@/types/loan";
 function DecisionBanner({ decision }: { decision: LoanDecision }) {
   if (decision === "approved") {
     return (
-      <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+      <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 p-5">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500">
           <CheckCircle2 className="h-6 w-6 text-white" />
         </div>
         <div>
-          <p className="text-lg font-bold text-emerald-800">Congratulations! Approved</p>
-          <p className="text-sm text-emerald-600">
+          <p className="text-lg font-bold text-emerald-800 dark:text-emerald-300">Congratulations! Approved</p>
+          <p className="text-sm text-emerald-600 dark:text-emerald-400">
             Your loan application has been approved. A loan officer will contact you within 2 business days.
           </p>
         </div>
@@ -49,13 +50,13 @@ function DecisionBanner({ decision }: { decision: LoanDecision }) {
   }
   if (decision === "denied") {
     return (
-      <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-5">
+      <div className="flex items-center gap-3 rounded-2xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 p-5">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-500">
           <XCircle className="h-6 w-6 text-white" />
         </div>
         <div>
-          <p className="text-lg font-bold text-red-800">Application Denied</p>
-          <p className="text-sm text-red-600">
+          <p className="text-lg font-bold text-red-800 dark:text-red-300">Application Denied</p>
+          <p className="text-sm text-red-600 dark:text-red-400">
             We were unable to approve your application at this time. See recommended alternatives below.
           </p>
         </div>
@@ -63,13 +64,13 @@ function DecisionBanner({ decision }: { decision: LoanDecision }) {
     );
   }
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+    <div className="flex items-center gap-3 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-5">
       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-500">
         <Clock className="h-6 w-6 text-white" />
       </div>
       <div>
-        <p className="text-lg font-bold text-amber-800">Under Review</p>
-        <p className="text-sm text-amber-600">Your application is being processed by our AI agents.</p>
+        <p className="text-lg font-bold text-amber-800 dark:text-amber-300">Under Review</p>
+        <p className="text-sm text-amber-600 dark:text-amber-400">Your application is being processed by our AI agents.</p>
       </div>
     </div>
   );
@@ -144,19 +145,19 @@ export default function ApplicationStatusPage() {
   if (isQueued) {
     return (
       <div className="mx-auto max-w-2xl space-y-6">
-        <Button variant="ghost" size="sm" className="-ml-2 text-slate-500 hover:text-slate-900" asChild>
+        <Button variant="ghost" size="sm" className="-ml-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100" asChild>
           <Link to="/portal">
             <ChevronLeft className="mr-1 h-4 w-4" />
             My Applications
           </Link>
         </Button>
 
-        <div className="rounded-2xl border border-blue-100 bg-gradient-to-b from-blue-50 to-white p-8 text-center">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100">
-            <Hourglass className="h-8 w-8 animate-pulse text-blue-500" />
+        <div className="rounded-2xl border border-blue-100 dark:border-blue-900 bg-gradient-to-b from-blue-50 dark:from-blue-950/40 to-white dark:to-slate-900/40 p-8 text-center">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 dark:bg-blue-900/50">
+            <Hourglass className="h-8 w-8 animate-pulse text-blue-500 dark:text-blue-400" />
           </div>
-          <h2 className="mb-2 text-xl font-bold text-slate-900">Application Received — Thank You!</h2>
-          <p className="mx-auto mb-6 max-w-sm text-sm text-slate-500">
+          <h2 className="mb-2 text-xl font-bold text-slate-900 dark:text-slate-100">Application Received — Thank You!</h2>
+          <p className="mx-auto mb-6 max-w-sm text-sm text-slate-500 dark:text-slate-400">
             Your application has been submitted successfully. Our team will review it and our AI
             agents will evaluate your profile and issue a decision shortly.
           </p>
@@ -176,18 +177,18 @@ export default function ApplicationStatusPage() {
             ].map((r) => (
               <div
                 key={r.label}
-                className="flex justify-between rounded-lg bg-white px-4 py-2 text-sm shadow-sm ring-1 ring-slate-100"
+                className="flex justify-between rounded-lg bg-white dark:bg-slate-800/60 px-4 py-2 text-sm shadow-sm ring-1 ring-slate-100 dark:ring-slate-700/60"
               >
-                <span className="text-slate-500">{r.label}</span>
-                <span className="font-medium text-slate-900">{r.value}</span>
+                <span className="text-slate-500 dark:text-slate-400">{r.label}</span>
+                <span className="font-medium text-slate-900 dark:text-slate-100">{r.value}</span>
               </div>
             ))}
           </div>
-          <div className="mt-6 flex items-center justify-center gap-2 text-xs text-slate-400">
+          <div className="mt-6 flex items-center justify-center gap-2 text-xs text-slate-400 dark:text-slate-500">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             Checking for updates every 5 seconds…
           </div>
-          <div className="mt-4 border-t border-blue-100 pt-4">
+          <div className="mt-4 border-t border-blue-100 dark:border-blue-900 pt-4">
             <button
               className="text-xs text-slate-400 hover:text-red-500 transition-colors"
               onClick={() => {
@@ -208,7 +209,7 @@ export default function ApplicationStatusPage() {
   // ── Completed — show full result ───────────────────────────────────────────
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <Button variant="ghost" size="sm" className="-ml-2 text-slate-500 hover:text-slate-900" asChild>
+      <Button variant="ghost" size="sm" className="-ml-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100" asChild>
         <Link to="/portal">
           <ChevronLeft className="mr-1 h-4 w-4" />
           My Applications
@@ -218,9 +219,9 @@ export default function ApplicationStatusPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm text-slate-500">Reference ID</p>
-          <h1 className="text-2xl font-bold text-slate-900">{loan.id}</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="text-sm text-slate-500 dark:text-slate-400">Reference ID</p>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{loan.id}</h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             {loan.loanPurpose} · ${loan.loanAmount.toLocaleString()} ·{" "}
             {new Date(loan.applicationDate).toLocaleDateString("en-US", {
               month: "long",
@@ -229,7 +230,7 @@ export default function ApplicationStatusPage() {
             })}
           </p>
         </div>
-        <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700">Completed</Badge>
+        <Badge className="border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">Completed</Badge>
       </div>
 
       {/* Decision banner */}
@@ -237,12 +238,12 @@ export default function ApplicationStatusPage() {
 
       {/* Explainability — why this decision was made */}
       {Array.isArray(loan.factors) && loan.factors.length > 0 && (
-        <Card className="border-slate-200">
+        <Card className="border-slate-200 dark:border-slate-700">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold text-slate-700">
+            <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">
               Why this decision was made
             </CardTitle>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-400 dark:text-slate-500">
               Each factor is scored against industry-standard lending guidelines.
             </p>
           </CardHeader>
@@ -254,26 +255,26 @@ export default function ApplicationStatusPage() {
                   key={f.name}
                   className={`rounded-xl border p-3 ${
                     f.impact === "positive"
-                      ? "border-emerald-100 bg-emerald-50/50"
+                      ? "border-emerald-100 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/30"
                       : f.impact === "negative"
-                      ? "border-red-100 bg-red-50/50"
-                      : "border-slate-100 bg-slate-50/50"
+                      ? "border-red-100 dark:border-red-800 bg-red-50/50 dark:bg-red-950/30"
+                      : "border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40"
                   }`}
                 >
                   <div className="flex items-start gap-3">
                     <div className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
-                      f.impact === "positive" ? "bg-emerald-100 text-emerald-600"
-                      : f.impact === "negative" ? "bg-red-100 text-red-600"
-                      : "bg-slate-100 text-slate-500"
+                      f.impact === "positive" ? "bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400"
+                      : f.impact === "negative" ? "bg-red-100 dark:bg-red-900/60 text-red-600 dark:text-red-400"
+                      : "bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400"
                     }`}>
                       <Icon className="h-3.5 w-3.5" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium text-slate-800">{f.name}</span>
-                        <span className="text-sm font-bold text-slate-900 shrink-0">{f.value}</span>
+                        <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{f.name}</span>
+                        <span className="text-sm font-bold text-slate-900 dark:text-slate-100 shrink-0">{f.value}</span>
                       </div>
-                      <p className="mt-0.5 text-xs text-slate-500">{f.detail}</p>
+                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{f.detail}</p>
                     </div>
                   </div>
                 </div>
@@ -299,22 +300,22 @@ export default function ApplicationStatusPage() {
           {
             label: "AI Confidence",
             value: `${Math.round((loan.confidence ?? 0) * 100)}%`,
-            color: "text-slate-700",
+            color: "text-slate-700 dark:text-slate-300",
           },
         ].map((s) => (
-          <Card key={s.label} className="border-slate-200 text-center">
+          <Card key={s.label} className="border-slate-200 dark:border-slate-700 text-center">
             <CardContent className="py-4">
               <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-              <p className="mt-1 text-xs text-slate-500">{s.label}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{s.label}</p>
             </CardContent>
           </Card>
         ))}
       </div>
 
       {/* AI Pipeline Timeline */}
-      <Card className="border-slate-200">
+      <Card className="border-slate-200 dark:border-slate-700">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-slate-700">AI Processing Timeline</CardTitle>
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">AI Processing Timeline</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 pt-0">
           {AGENT_STEPS.map((agent) => {
@@ -324,16 +325,16 @@ export default function ApplicationStatusPage() {
               <div key={agent.name} className="flex items-start gap-3">
                 <div
                   className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-                    skip ? "bg-slate-50 text-slate-300" : "bg-emerald-100 text-emerald-600"
+                    skip ? "bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600" : "bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400"
                   }`}
                 >
                   {skip ? <Icon className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-4 w-4" />}
                 </div>
                 <div>
-                  <p className={`text-sm font-medium ${skip ? "text-slate-400" : "text-slate-900"}`}>
+                  <p className={`text-sm font-medium ${skip ? "text-slate-400 dark:text-slate-600" : "text-slate-900 dark:text-slate-100"}`}>
                     {agent.name}
                   </p>
-                  <p className="text-xs text-slate-400">{agent.desc}</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">{agent.desc}</p>
                 </div>
               </div>
             );
@@ -343,36 +344,36 @@ export default function ApplicationStatusPage() {
 
       {/* Decision letter */}
       {loan.generatedEmail && (
-        <Card className="border-slate-200">
+        <Card className="border-slate-200 dark:border-slate-700">
           <CardHeader className="pb-3">
             <button
               onClick={() => setEmailExpanded((v) => !v)}
               className="flex w-full items-center justify-between text-left"
             >
-              <CardTitle className="text-sm font-semibold text-slate-700">
+              <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                 Decision Letter (AI Generated)
               </CardTitle>
               {emailExpanded ? (
-                <ChevronUp className="h-4 w-4 text-slate-400" />
+                <ChevronUp className="h-4 w-4 text-slate-400 dark:text-slate-500" />
               ) : (
-                <ChevronDown className="h-4 w-4 text-slate-400" />
+                <ChevronDown className="h-4 w-4 text-slate-400 dark:text-slate-500" />
               )}
             </button>
           </CardHeader>
           {emailExpanded && (
             <CardContent className="pt-0">
-              <pre className="whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-xs leading-relaxed text-slate-700">
+              <pre className="whitespace-pre-wrap rounded-xl bg-slate-50 dark:bg-slate-800/60 p-4 text-xs leading-relaxed text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-700">
                 {loan.generatedEmail}
               </pre>
               {(loan.biasScore != null || loan.toxicityScore != null) && (
-                <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+                <div className="mt-3 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                   <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
                   Bias score:{" "}
-                  <span className="font-medium text-slate-700">
+                  <span className="font-medium text-slate-700 dark:text-slate-300">
                     {((loan.biasScore ?? 0) * 100).toFixed(1)}%
                   </span>
                   {" · "}Toxicity:{" "}
-                  <span className="font-medium text-slate-700">
+                  <span className="font-medium text-slate-700 dark:text-slate-300">
                     {((loan.toxicityScore ?? 0) * 100).toFixed(1)}%
                   </span>
                 </div>
@@ -388,6 +389,30 @@ export default function ApplicationStatusPage() {
         loan.recommendations.length > 0 && (
           <CustomerOffersList loanId={loan.id} recommendations={loan.recommendations} />
         )}
+
+      {/* What-If Simulator — only shown for denied applications */}
+      {loan.decision === "denied" && (
+        <Card className="border-slate-200 dark:border-slate-700">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+              What-If Simulator
+            </CardTitle>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Adjust the sliders to see how changes to your profile would affect your approval odds.
+              No credit inquiry — instant estimate.
+            </p>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <WhatIfSimulator
+              initialCreditScore={loan.creditScore}
+              initialDti={loan.debtToIncomeRatio}
+              initialLoanAmount={loan.loanAmount}
+              initialIncome={loan.income}
+              initialEmploymentType={loan.employmentType}
+            />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -415,12 +440,12 @@ function CustomerOffersList({
   });
 
   return (
-    <Card className="border-slate-200">
+    <Card className="border-slate-200 dark:border-slate-700">
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-semibold text-slate-700">
+        <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">
           Alternative Products for You
         </CardTitle>
-        <p className="text-xs text-slate-500 mt-1">
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
           Based on your profile, these products may be a good fit.
         </p>
       </CardHeader>
@@ -431,13 +456,13 @@ function CustomerOffersList({
           const sent = interestSent.has(rec.productName);
           const isLoading = loadingProduct === rec.productName;
           return (
-            <div key={rec.productName} className={`rounded-xl p-4 border ${isPreApproved ? "bg-emerald-50 border-emerald-200" : "bg-slate-50 border-slate-200"}`}>
+            <div key={rec.productName} className={`rounded-xl p-4 border ${isPreApproved ? "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800" : "bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700"}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-medium text-slate-900">{rec.productName}</p>
+                    <p className="font-medium text-slate-900 dark:text-slate-100">{rec.productName}</p>
                     {isPreApproved && (
-                      <Badge className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-200">
+                      <Badge className="text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800">
                         Pre-qualified
                       </Badge>
                     )}
@@ -447,15 +472,15 @@ function CustomerOffersList({
                       </Badge>
                     )}
                   </div>
-                  <p className="mt-0.5 text-xs text-slate-500">{rec.description}</p>
-                  <p className="mt-1 text-xs font-semibold text-blue-600">{rec.rate}</p>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{rec.description}</p>
+                  <p className="mt-1 text-xs font-semibold text-blue-600 dark:text-blue-400">{rec.rate}</p>
                 </div>
-                <Badge className="shrink-0 border-blue-200 bg-blue-50 text-blue-700">
+                <Badge className="shrink-0 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400">
                   {rec.matchScore}% match
                 </Badge>
               </div>
               {rec.reason && (
-                <p className="mt-2 text-xs text-slate-400 border-t border-slate-200 pt-2">{rec.reason}</p>
+                <p className="mt-2 text-xs text-slate-400 dark:text-slate-500 border-t border-slate-200 dark:border-slate-700 pt-2">{rec.reason}</p>
               )}
               <Button
                 size="sm"

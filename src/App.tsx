@@ -27,6 +27,8 @@ import AboutPage from "@/pages/AboutPage";
 import PrivacyPage from "@/pages/PrivacyPage";
 import TermsPage from "@/pages/TermsPage";
 import ContactPage from "@/pages/ContactPage";
+import HelpPage from "@/pages/HelpPage";
+import EligibilityCheckPage from "@/pages/EligibilityCheckPage";
 import PortalLayout from "@/pages/portal/PortalLayout";
 import CustomerHomePage from "@/pages/portal/CustomerHomePage";
 import LoanApplicationFormPage from "@/pages/portal/LoanApplicationFormPage";
@@ -49,6 +51,8 @@ const App = () => (
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/contact" element={<ContactPage />} />
+            <Route path="/help" element={<HelpPage />} />
+            <Route path="/eligibility-check" element={<EligibilityCheckPage />} />
             <Route
               path="/sign-in/*"
               element={

@@ -51,6 +51,9 @@ export default function LandingPage() {
             <a href="#features" className="hover:text-cyan-400 transition-colors">
               Features
             </a>
+            <Link to="/eligibility-check" className="hover:text-emerald-400 transition-colors">
+              Eligibility Check
+            </Link>
           </nav>
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" className="hidden text-slate-300 hover:bg-white/5 hover:text-white sm:inline-flex" asChild>
@@ -100,12 +103,15 @@ export default function LandingPage() {
                 Get Started <ArrowRight className="h-4 w-4" />
               </LiquidButton>
             </Link>
-            <a href="#how-it-works">
+            <Link to="/eligibility-check">
               <MetalButton variant="cyan">
-                Learn More
+                Check Eligibility Free
               </MetalButton>
-            </a>
+            </Link>
           </motion.div>
+          <motion.p variants={fadeUp} className="text-xs text-slate-500 mt-4">
+            No sign-in required · No credit inquiry · Instant result
+          </motion.p>
         </motion.div>
       </section>
 
@@ -425,6 +431,100 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ─── Know Before You Apply ───────────────────────────────────────── */}
+      <section className="py-20 md:py-28 bg-slate-900/30 border-y border-white/5">
+        <div className="mx-auto max-w-7xl px-6">
+          <div className="grid gap-12 md:grid-cols-2 items-center">
+            <motion.div
+              initial={{ opacity: 0, x: -30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+            >
+              <Badge variant="outline" className="mb-4 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
+                No credit inquiry
+              </Badge>
+              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+                Know before you apply
+              </h2>
+              <p className="text-slate-400 mb-6 leading-relaxed">
+                Our free eligibility checker gives you an instant, honest assessment of your approval odds
+                — before you submit a full application. See your exact risk factors and get actionable
+                suggestions to improve your profile.
+              </p>
+              <ul className="space-y-3 mb-8">
+                {[
+                  { icon: Zap, text: "Results in under 30 seconds" },
+                  { icon: ShieldCheck, text: "No sign-in or credit pull required" },
+                  { icon: BarChart3, text: "Approval probability + top blockers" },
+                  { icon: Clock, text: "Interactive What-If simulator for denied profiles" },
+                ].map(({ icon: Icon, text }) => (
+                  <li key={text} className="flex items-center gap-3 text-sm text-slate-300">
+                    <div className="h-6 w-6 shrink-0 rounded-full bg-emerald-500/20 flex items-center justify-center ring-1 ring-emerald-500/30">
+                      <Icon className="h-3.5 w-3.5 text-emerald-400" />
+                    </div>
+                    {text}
+                  </li>
+                ))}
+              </ul>
+              <Button
+                className="rounded-full bg-emerald-500 text-white hover:bg-emerald-400 px-6 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                asChild
+              >
+                <Link to="/eligibility-check">
+                  Check My Eligibility <ArrowRight className="ml-1.5 h-4 w-4" />
+                </Link>
+              </Button>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, x: 30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="rounded-3xl border border-white/10 bg-slate-800/50 p-8 space-y-4"
+            >
+              {/* Faux eligibility result preview */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Eligibility Result</span>
+                <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">Likely to Qualify</span>
+              </div>
+              <div className="space-y-3">
+                {[
+                  { label: "Approval Probability", value: "78%", bar: 78, color: "bg-emerald-400" },
+                  { label: "Risk Score", value: "22/100", bar: 22, color: "bg-emerald-400" },
+                  { label: "Model Confidence", value: "91%", bar: 91, color: "bg-blue-400" },
+                ].map((m) => (
+                  <div key={m.label}>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-slate-400">{m.label}</span>
+                      <span className="text-white font-semibold">{m.value}</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-slate-700 rounded-full overflow-hidden">
+                      <div className={`h-full ${m.color} rounded-full`} style={{ width: `${m.bar}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="pt-3 border-t border-white/10 space-y-2">
+                <p className="text-xs text-slate-400 font-medium">Factor Breakdown</p>
+                {[
+                  { name: "Credit Score", value: "742 (Very Good)", positive: true },
+                  { name: "DTI Ratio", value: "28% (Good)", positive: true },
+                  { name: "Employment", value: "Full-time", positive: true },
+                  { name: "Loan-to-Income", value: "3.2× (Elevated)", positive: false },
+                ].map((f) => (
+                  <div key={f.name} className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500">{f.name}</span>
+                    <span className={f.positive ? "text-emerald-400" : "text-amber-400"}>{f.value}</span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
       {/* ─── CTA Banner ──────────────────────────────────────────────────── */}
       <section className="py-24 px-6 relative z-10">
         <motion.div 
@@ -477,9 +577,13 @@ export default function LandingPage() {
                    <span className="font-semibold text-white">LoanWise AI</span>
                  </div>
                  <p className="max-w-xs mb-6">Empowering Singapore residents with AI-driven, lightning-fast financial decisions.</p>
-                 <div className="flex items-center gap-2 text-emerald-500">
+                 <div className="flex items-center gap-2 text-emerald-500 mb-2">
                    <ShieldCheck className="h-4 w-4" />
                    <span className="text-xs font-semibold">Bias-free guarantees</span>
+                 </div>
+                 <div className="flex items-center gap-2 text-slate-500 text-xs">
+                   <Lock className="h-3.5 w-3.5" />
+                   <span>MAS-aligned fair lending practices</span>
                  </div>
               </div>
               
@@ -502,9 +606,9 @@ export default function LandingPage() {
               <div>
                  <h4 className="font-semibold text-white mb-4">Support</h4>
                  <ul className="space-y-2">
-                    <li><Link to="/contact" className="hover:text-cyan-400">Help Center</Link></li>
+                    <li><Link to="/help" className="hover:text-cyan-400">Help Center</Link></li>
+                    <li><Link to="/eligibility-check" className="hover:text-cyan-400">Eligibility Check</Link></li>
                     <li><Link to="/contact" className="hover:text-cyan-400">Contact</Link></li>
-                    <li><a href="#" className="hover:text-cyan-400">Status</a></li>
                  </ul>
               </div>
            </div>

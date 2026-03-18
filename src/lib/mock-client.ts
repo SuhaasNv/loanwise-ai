@@ -317,6 +317,38 @@ export async function mockInterceptor<T>(
     return { success: true } as unknown as T;
   }
 
+  // ── Eligibility check ─────────────────────────────────────────────────────
+  if (method === "POST" && path === "/loan/eligibility-check") {
+    const body = options?.body ? JSON.parse(options.body as string) : {};
+    const cs = body.creditScore ?? 700;
+    const dti = body.debtToIncomeRatio ?? 0.35;
+    const riskScore = Math.max(0.04, Math.min(0.96, 0.45 + (cs < 670 ? 0.1 : cs >= 740 ? -0.15 : -0.06) + (dti > 0.43 ? 0.1 : dti < 0.28 ? -0.09 : 0)));
+    const decision = riskScore < 0.5 ? "approved" : "denied";
+    return {
+      riskScore, approvalProbability: Math.round((1 - riskScore) * 100) / 100, decision, confidence: 0.87,
+      factors: [], blockers: [], suggestions: decision === "denied" ? ["Improving your credit score may help."] : [],
+      suggestedLoanAmount: null, message: decision === "approved" ? "Likely to qualify!" : "Profile needs improvement.",
+    } as unknown as T;
+  }
+
+  // ── Contact form ──────────────────────────────────────────────────────────
+  if (method === "POST" && path === "/contact") {
+    return { success: true, id: `CR-MOCK-${Date.now()}`, message: "Your message has been received." } as unknown as T;
+  }
+
+  // ── Document upload ────────────────────────────────────────────────────────
+  if (method === "POST" && /^\/loans\/[^/]+\/documents$/.test(path)) {
+    const body = options?.body ? JSON.parse(options.body as string) : {};
+    return {
+      id: `DOC-MOCK-${Date.now()}`, loanId: body.loanId, docType: body.docType,
+      filename: body.filename, status: "verified",
+      verificationResult: { passed: true, confidence: 0.88, summary: "Document verified successfully.", mismatches: [], extractedFields: {} },
+    } as unknown as T;
+  }
+  if (method === "GET" && /^\/loans\/[^/]+\/documents$/.test(path)) {
+    return [] as unknown as T;
+  }
+
   // Unknown route — fall through to real fetch
   return null;
 }

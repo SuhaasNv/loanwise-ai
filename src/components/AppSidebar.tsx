@@ -7,6 +7,7 @@ import {
   Bot,
   Settings,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import {
@@ -75,7 +76,10 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="p-4">
-        <div className="flex items-center gap-2.5">
+        <Link
+          to="/dashboard"
+          className="flex items-center gap-2.5 transition-opacity hover:opacity-90"
+        >
           <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
             <Brain className="h-4 w-4 text-primary-foreground" />
           </div>
@@ -85,7 +89,7 @@ export function AppSidebar() {
               <span className="text-[10px] text-muted-foreground leading-tight mt-0.5">Loan Intelligence</span>
             </div>
           )}
-        </div>
+        </Link>
       </SidebarHeader>
 
       <SidebarContent className="px-2">

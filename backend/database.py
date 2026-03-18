@@ -103,6 +103,30 @@ def init_db() -> None:
             timestamp   TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS contact_requests (
+            id        TEXT PRIMARY KEY,
+            name      TEXT NOT NULL,
+            email     TEXT NOT NULL,
+            subject   TEXT NOT NULL,
+            message   TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            status    TEXT DEFAULT 'open'
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS loan_documents (
+            id          TEXT PRIMARY KEY,
+            loanId      TEXT NOT NULL,
+            userId      TEXT,
+            docType     TEXT NOT NULL,
+            filename    TEXT NOT NULL,
+            status      TEXT DEFAULT 'uploaded',
+            extractedData TEXT,
+            verificationResult TEXT,
+            timestamp   TEXT NOT NULL
+        )
+    """)
     conn.commit()
     # Add columns that may not exist on older DB files
     _migrate(conn)
@@ -155,6 +179,45 @@ def _seed(conn: sqlite3.Connection) -> None:
             log["status"], log["confidenceScore"], log["applicationId"],
         ))
     conn.commit()
+
+
+# ─── Row Level Security (RLS) ─────────────────────────────────────────────────
+# SQLite has no native RLS, so we enforce it here in the data layer.
+# Every function that returns sensitive rows MUST go through these policies.
+
+def rls_loan(loan: dict | None, user_id: str | None, role: str) -> dict | None:
+    """
+    Policy: managers can read/write any loan.
+            customers can only read/write loans where userId == their own user_id.
+    Returns None (treated as 404) when the policy denies access.
+    """
+    if loan is None:
+        return None
+    if role == "manager":
+        return loan
+    # Customer: deny if the loan belongs to a different user
+    if loan.get("userId") and loan["userId"] != user_id:
+        return None
+    return loan
+
+
+def rls_document(doc: dict | None, user_id: str | None, role: str) -> dict | None:
+    """
+    Policy: managers can read any document.
+            customers can only read documents where userId == their own user_id.
+    """
+    if doc is None:
+        return None
+    if role == "manager":
+        return doc
+    if doc.get("userId") and doc["userId"] != user_id:
+        return None
+    return doc
+
+
+def get_loan_scoped(loan_id: str, user_id: str | None, role: str) -> dict | None:
+    """RLS-enforced single loan fetch. Returns None on access denied (caller should 404)."""
+    return rls_loan(get_loan_by_id(loan_id), user_id, role)
 
 
 # ─── Loan CRUD ────────────────────────────────────────────────────────────────
@@ -498,6 +561,66 @@ def compute_recommendation_interest_analytics() -> list[dict]:
     """).fetchall()
     conn.close()
     return [{"productName": r["productName"], "clicks": r["clicks"]} for r in rows]
+
+
+# ─── Loan documents ───────────────────────────────────────────────────────────
+
+def insert_loan_document(loan_id: str, user_id: str, doc_type: str, filename: str) -> dict:
+    conn = get_db()
+    doc_id = f"DOC-{uuid.uuid4().hex[:8].upper()}"
+    ts = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO loan_documents (id, loanId, userId, docType, filename, timestamp) VALUES (?,?,?,?,?,?)",
+        (doc_id, loan_id, user_id, doc_type, filename, ts),
+    )
+    conn.commit()
+    conn.close()
+    return {"id": doc_id, "loanId": loan_id, "docType": doc_type, "filename": filename, "status": "uploaded", "timestamp": ts}
+
+
+def update_loan_document(doc_id: str, extracted_data: dict, verification_result: dict) -> None:
+    conn = get_db()
+    conn.execute(
+        "UPDATE loan_documents SET extractedData=?, verificationResult=?, status=? WHERE id=?",
+        (json.dumps(extracted_data), json.dumps(verification_result), "verified", doc_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_documents_for_loan(loan_id: str) -> list[dict]:
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM loan_documents WHERE loanId=? ORDER BY timestamp",
+        (loan_id,),
+    ).fetchall()
+    conn.close()
+    result = []
+    for row in rows:
+        d = dict(row)
+        for field in ("extractedData", "verificationResult"):
+            if d.get(field):
+                try:
+                    d[field] = json.loads(d[field])
+                except Exception:
+                    pass
+        result.append(d)
+    return result
+
+
+# ─── Contact requests ─────────────────────────────────────────────────────────
+
+def insert_contact_request(name: str, email: str, subject: str, message: str) -> dict:
+    conn = get_db()
+    req_id = f"CR-{uuid.uuid4().hex[:8].upper()}"
+    ts = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO contact_requests (id, name, email, subject, message, timestamp) VALUES (?,?,?,?,?,?)",
+        (req_id, name, email, subject, message, ts),
+    )
+    conn.commit()
+    conn.close()
+    return {"id": req_id, "name": name, "email": email, "subject": subject, "timestamp": ts}
 
 
 # ─── Product catalog (persisted in settings table) ────────────────────────────
