@@ -22,6 +22,7 @@
 - [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
 - [Environment Variables](#environment-variables)
+- [Deployment](#deployment)
 - [API Documentation](#api-documentation)
 - [Running Tests](#running-tests)
 - [License](#license)
@@ -569,6 +570,18 @@ Set `VITE_USE_MOCK_DATA=true` in `.env.local` to use local fixture data without 
 | `MANAGER_SECRET` | Secret for manager role claim |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins |
 | `ENVIRONMENT` | `production` for strict checks |
+
+---
+
+## Deployment
+
+See **[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)** for full deployment instructions. Options include:
+
+- **Railway** — full stack (frontend + backend)
+- **Vercel + Railway** — frontend on Vercel, backend on Railway
+- **Docker** — self-hosted on VPS, Fly.io, etc.
+
+**Production essentials:** Set `VITE_API_URL`, `CLERK_JWKS_URL`, `MANAGER_SECRET`, `ALLOWED_ORIGINS`, and `ENVIRONMENT=production`.
 
 ---
 

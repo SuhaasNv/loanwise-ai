@@ -1,187 +1,302 @@
-# Deploying LoanWise AI to Railway & Vercel
+# LoanWise AI — Deployment Guide
 
-> **Security:** Never commit `.env`, `.env.local`, `backend/.env`, or `loanwise.db` to Git. These are in `.gitignore`. Use Railway/Vercel dashboard for production secrets.
-
-This guide walks you through hosting **LoanWise AI** with:
-- **Backend (FastAPI)** → Railway
-- **Frontend (React/Vite)** → Vercel
+This guide covers deploying the full stack (React frontend + FastAPI backend) to production. Choose one of the options below based on your preference.
 
 ---
 
-## Architecture Overview
+## Table of Contents
 
-```
-┌─────────────────────┐         ┌─────────────────────┐
-│  Vercel (Frontend)   │  ────►  │  Railway (Backend)   │
-│  React + Vite SPA    │  API    │  FastAPI + SQLite    │
-│  *.vercel.app        │  calls  │  *.up.railway.app   │
-└─────────────────────┘         └─────────────────────┘
-```
+1. [Prerequisites](#prerequisites)
+2. [Environment Variables Reference](#environment-variables-reference)
+3. [Option A: Railway (Full Stack)](#option-a-railway-full-stack)
+4. [Option B: Vercel (Frontend) + Railway (Backend)](#option-b-vercel-frontend--railway-backend)
+5. [Option C: Docker (Self-Hosted)](#option-c-docker-self-hosted)
+6. [Post-Deployment Checklist](#post-deployment-checklist)
 
 ---
 
-## Part 1: Deploy Backend to Railway
+## Prerequisites
 
-### 1. Create a Railway Project
+Before deploying, ensure you have:
 
-1. Go to [railway.app](https://railway.app) and sign in (GitHub recommended).
-2. Click **New Project** → **Deploy from GitHub repo**.
-3. Select your `loanwise-ai` repository.
-4. Railway will create a new service.
+| Item | Where to Get |
+|------|--------------|
+| **Clerk account** | [dashboard.clerk.com](https://dashboard.clerk.com) — create an application |
+| **Google AI (Gemini) API key** | [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) |
+| **OpenAI API key** (optional fallback) | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| **GitHub repository** | Push your code to GitHub for connected deployments |
 
-### 2. Configure the Backend Service
+---
 
-1. In your Railway project, click the service.
-2. Go to **Settings** → **General**.
-3. Set **Root Directory** to `backend`.
-4. Railway will auto-detect Python from `requirements.txt` and use the `Procfile` or `railway.json` for the start command.
+## Environment Variables Reference
 
-### 3. Add Environment Variables
-
-Go to **Variables** and add:
+### Frontend (build-time, baked into the bundle)
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GOOGLE_API_KEY` | Yes (for AI) | From [Google AI Studio](https://aistudio.google.com/app/apikey) |
-| `OPENAI_API_KEY` | Optional | Fallback when Gemini is unavailable |
-| `CLERK_SECRET_KEY` | Production | From [Clerk Dashboard](https://dashboard.clerk.com) |
-| `CLERK_JWKS_URL` | Production | `https://<your-frontend-api>.clerk.accounts.dev/.well-known/jwks.json` |
-| `MANAGER_SECRET` | Production | Strong secret for manager role claim (e.g. random 32+ chars) |
-| `ALLOWED_ORIGINS` | Production | Comma-separated: `https://yourapp.vercel.app,https://yourapp.vercel.app` |
-| `ENVIRONMENT` | Production | Set to `production` |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key (`pk_live_*` for production) |
+| `VITE_API_URL` | Yes (production) | Full URL of your backend API, e.g. `https://your-backend.railway.app` |
+| `VITE_DEV_SKIP_AUTH` | No | Set to `true` only for local dev — **never** in production |
+| `VITE_USE_MOCK_DATA` | No | Set to `true` only for local dev — **never** in production |
 
-**Example `ALLOWED_ORIGINS`** (replace with your Vercel URL):
-```
-https://loanwise-ai.vercel.app,https://your-custom-domain.com
-```
+### Backend (runtime)
 
-### 4. Deploy and Get the URL
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GOOGLE_API_KEY` | Yes (for AI) | Gemini API key |
+| `OPENAI_API_KEY` | No | Fallback when Gemini fails |
+| `CLERK_SECRET_KEY` | Yes (production) | Clerk secret key (`sk_live_*`) |
+| `CLERK_JWKS_URL` | Yes (production) | `https://<your-clerk-frontend-api>.clerk.accounts.dev/.well-known/jwks.json` |
+| `MANAGER_SECRET` | Yes (production) | Strong secret for claiming manager role — **must** differ from default |
+| `ALLOWED_ORIGINS` | Yes (production) | Comma-separated frontend URLs, e.g. `https://yourapp.vercel.app,https://yourapp.com` |
+| `ENVIRONMENT` | Yes (production) | Set to `production` to enforce security checks |
 
-1. Railway will build and deploy automatically.
-2. Go to **Settings** → **Networking** → **Generate Domain**.
-3. Copy the URL (e.g. `https://loanwise-ai-backend.up.railway.app`).
+### Clerk JWKS URL
 
-### 5. SQLite & Data Persistence
-
-⚠️ **Important:** Railway uses an **ephemeral filesystem**. SQLite data is lost on each redeploy.
-
-- For **development/demo**: This is acceptable; the app will work but data resets on deploy.
-- For **production**: Add a **PostgreSQL** database in Railway and migrate your backend to use it (requires code changes).
+1. In [Clerk Dashboard](https://dashboard.clerk.com) → your application → **API Keys**
+2. Find **Frontend API** (e.g. `https://your-app-123.clerk.accounts.dev`)
+3. JWKS URL = `https://your-app-123.clerk.accounts.dev/.well-known/jwks.json`
 
 ---
 
-## Part 2: Deploy Frontend to Vercel
+## Option A: Railway (Full Stack)
 
-### 1. Create a Vercel Project
+Railway can host both the frontend and backend. The backend uses SQLite; on Railway the filesystem is ephemeral, so data resets on redeploy. For persistent data, add a Railway Volume or use an external DB later.
 
-1. Go to [vercel.com](https://vercel.com) and sign in (GitHub recommended).
-2. Click **Add New** → **Project**.
-3. Import your `loanwise-ai` repository.
-4. Vercel will auto-detect Vite.
+### 1. Deploy the Backend
 
-### 2. Configure Build Settings
+1. Go to [railway.app](https://railway.app) and sign in with GitHub.
+2. **New Project** → **Deploy from GitHub repo** → select your `loanwise-ai` repo.
+3. Set the **Root Directory** to `backend` (or create a service that points to `backend`).
+4. Railway will detect Python and use `railway.json` for the start command.
+5. Add **Variables** (Settings → Variables):
 
-- **Framework Preset:** Vite
-- **Build Command:** `npm run build` (default)
-- **Output Directory:** `dist` (default)
-- **Root Directory:** `./` (leave empty)
+   ```
+   GOOGLE_API_KEY=your-gemini-key
+   OPENAI_API_KEY=your-openai-key
+   CLERK_SECRET_KEY=sk_live_xxxxx
+   CLERK_JWKS_URL=https://xxxxx.clerk.accounts.dev/.well-known/jwks.json
+   MANAGER_SECRET=your-strong-random-secret
+   ALLOWED_ORIGINS=https://your-frontend.railway.app
+   ENVIRONMENT=production
+   ```
 
-### 3. Add Environment Variables
+6. Deploy. Copy the public URL (e.g. `https://loanwise-backend-xxxx.up.railway.app`).
 
-Go to **Settings** → **Environment Variables** and add:
+### 2. Deploy the Frontend
 
-| Variable | Value | Required |
-|----------|-------|----------|
-| `VITE_API_URL` | `https://your-railway-backend.up.railway.app` | Yes |
-| `VITE_CLERK_PUBLISHABLE_KEY` | `pk_test_...` or `pk_live_...` | Yes |
+1. In the same Railway project, **Add Service** → **Deploy from GitHub**.
+2. Set **Root Directory** to `.` (project root).
+3. Override the build/start:
 
-**Do not set** in production:
-- `VITE_USE_MOCK_DATA` (leave unset or `false`)
-- `VITE_DEV_SKIP_AUTH` (leave unset or `false`)
+   - **Build Command:** `npm install && npm run build`
+   - **Start Command:** `npx serve dist -s -l 8080`
+   - **Install:** Add `serve` to `devDependencies` in `package.json` if not present, or use `npx serve`.
 
-**⚠️ Important:** `VITE_API_URL` must be set **before** the first build. Redeploy after adding it if it was missing.
+4. Add **Variables**:
 
-### 4. Deploy
+   ```
+   VITE_CLERK_PUBLISHABLE_KEY=pk_live_xxxxx
+   VITE_API_URL=https://loanwise-backend-xxxx.up.railway.app
+   ```
 
-1. Click **Deploy**.
-2. Vercel will build and give you a URL like `https://loanwise-ai.vercel.app`.
+5. Deploy. Copy the frontend URL.
+
+### 3. Update CORS
+
+In the backend service variables, set:
+
+```
+ALLOWED_ORIGINS=https://your-frontend-url.up.railway.app
+```
+
+Redeploy the backend if you change this.
 
 ---
 
-## Part 3: Post-Deploy Configuration
+## Option B: Vercel (Frontend) + Railway (Backend)
 
-### 1. Update Clerk
+A common setup: Vercel for the React app, Railway for the API.
 
-1. Go to [Clerk Dashboard](https://dashboard.clerk.com) → **Domains**.
-2. Add your Vercel domain (e.g. `loanwise-ai.vercel.app`).
-3. Ensure your **Production** instance uses the correct domain.
+### 1. Deploy Backend to Railway
 
-### 2. Update Railway CORS
-
-In Railway **Variables**, set `ALLOWED_ORIGINS` to include your Vercel URL:
+Follow **Option A, Step 1** above. Use your Vercel frontend URL in `ALLOWED_ORIGINS`:
 
 ```
-https://loanwise-ai.vercel.app,https://www.loanwise-ai.vercel.app
+ALLOWED_ORIGINS=https://your-app.vercel.app
 ```
 
-### 3. Redeploy
+### 2. Deploy Frontend to Vercel
 
-- **Railway:** Redeploy after changing `ALLOWED_ORIGINS`.
-- **Vercel:** Redeploy after changing `VITE_API_URL` (env vars are baked in at build time).
+1. Go to [vercel.com](https://vercel.com) → **Add New** → **Project**.
+2. Import your GitHub repo.
+3. **Framework Preset:** Vite.
+4. **Root Directory:** `.`
+5. **Build Command:** `npm run build`
+6. **Output Directory:** `dist`
+7. **Environment Variables:**
+
+   | Name | Value |
+   |------|-------|
+   | `VITE_CLERK_PUBLISHABLE_KEY` | `pk_live_xxxxx` |
+   | `VITE_API_URL` | `https://your-backend.railway.app` |
+
+8. Deploy.
+
+### 3. Configure Clerk for Production
+
+In Clerk Dashboard:
+
+1. **Domains** → Add your Vercel domain (e.g. `your-app.vercel.app`).
+2. Ensure **Sign-in** and **Sign-up** URLs use your production domain.
 
 ---
 
-## Quick Reference
+## Option C: Docker (Self-Hosted)
 
-### Railway (Backend)
+For VPS (DigitalOcean, Linode, AWS EC2, etc.) or Fly.io.
 
-| Setting | Value |
-|---------|-------|
-| Root Directory | `backend` |
-| Start Command | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
+### 1. Create `Dockerfile` (backend)
 
-### Vercel (Frontend)
+Create `backend/Dockerfile`:
 
-| Setting | Value |
-|---------|-------|
-| Build Command | `npm run build` |
-| Output Directory | `dist` |
-| Framework | Vite |
+```dockerfile
+FROM python:3.11-slim
 
-### Environment Variables
+WORKDIR /app
 
-| Where | Variable | Required |
-|-------|-----------|----------|
-| Railway | `GOOGLE_API_KEY` | Yes (for AI) |
-| Railway | `MANAGER_SECRET` | Yes (production) |
-| Railway | `CLERK_JWKS_URL` | Yes (production) |
-| Railway | `CLERK_SECRET_KEY` | Yes (production) |
-| Railway | `ALLOWED_ORIGINS` | Yes (Vercel URL) |
-| Railway | `ENVIRONMENT` | `production` |
-| Vercel | `VITE_API_URL` | Yes (Railway URL) |
-| Vercel | `VITE_CLERK_PUBLISHABLE_KEY` | Yes |
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+### 2. Create `Dockerfile` (frontend)
+
+Create `Dockerfile` in the project root:
+
+```dockerfile
+# Build stage
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+
+ARG VITE_CLERK_PUBLISHABLE_KEY
+ARG VITE_API_URL
+ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
+ENV VITE_API_URL=$VITE_API_URL
+
+RUN npm run build
+
+# Serve stage
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+### 3. Create `nginx.conf`
+
+```nginx
+server {
+    listen 80;
+    root /usr/share/nginx/html;
+    index index.html;
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+    location /api {
+        proxy_pass http://backend:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+> **Note:** This assumes the backend container is named `backend`. Adjust for your orchestration (Docker Compose, Kubernetes, etc.).
+
+### 4. Docker Compose Example
+
+Create `docker-compose.yml`:
+
+```yaml
+version: "3.8"
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
+      - CLERK_JWKS_URL=${CLERK_JWKS_URL}
+      - MANAGER_SECRET=${MANAGER_SECRET}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - ENVIRONMENT=production
+    volumes:
+      - loanwise_data:/app
+
+  frontend:
+    build:
+      context: .
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY}
+        VITE_API_URL: http://localhost:8000
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  loanwise_data:
+```
+
+For production, use a reverse proxy (Traefik, Caddy, nginx) in front and set `VITE_API_URL` to your public backend URL.
+
+---
+
+## Post-Deployment Checklist
+
+- [ ] **Clerk:** Add production domain to allowed origins.
+- [ ] **Backend:** `ENVIRONMENT=production` and `MANAGER_SECRET` is not the default.
+- [ ] **Backend:** `CLERK_JWKS_URL` is set so JWT verification is enabled.
+- [ ] **Backend:** `ALLOWED_ORIGINS` includes your frontend URL (no trailing slash).
+- [ ] **Frontend:** `VITE_API_URL` points to the live backend (no trailing slash).
+- [ ] **Frontend:** `VITE_DEV_SKIP_AUTH` and `VITE_USE_MOCK_DATA` are **not** set.
+- [ ] **Manager access:** Visit `/claim-manager` and enter `MANAGER_SECRET` to grant yourself manager role.
+- [ ] **Health check:** Open `https://your-backend/health` — should return `{"status":"ok"}`.
+
+---
+
+## Database Notes (SQLite)
+
+The app uses SQLite by default. On platforms with ephemeral filesystems (Railway, Render, Heroku):
+
+- Data is lost on each redeploy.
+- For persistence, either:
+  - Use a **Railway Volume** (or equivalent) mounted to the backend’s data directory, or
+  - Migrate to **PostgreSQL** and update `database.py` to use a PostgreSQL driver (e.g. `psycopg2` or `asyncpg`).
+
+For small demos or internal tools, ephemeral SQLite is acceptable.
 
 ---
 
 ## Troubleshooting
 
-### CORS errors
-
-- Ensure `ALLOWED_ORIGINS` on Railway includes your Vercel URL exactly (with `https://`, no trailing slash).
-- Use comma-separated values for multiple origins.
-
-### "Backend unreachable"
-
-- Check `VITE_API_URL` is set correctly (no trailing slash).
-- Ensure Railway service is running and the domain is generated.
-- Visit `https://your-railway-url.up.railway.app/health` directly to verify.
-
-### 401 Unauthorized
-
-- Ensure `CLERK_JWKS_URL` is set on Railway.
-- Add your Vercel domain to Clerk allowed domains
-
-### MANAGER_SECRET startup failure
-
-- In production, `MANAGER_SECRET` cannot be the default `loanwise-manager-2026`.
-- Generate a strong secret (e.g. `openssl rand -hex 32`) and set it in Railway.
+| Issue | Fix |
+|-------|-----|
+| CORS errors | Ensure `ALLOWED_ORIGINS` includes the exact frontend URL (protocol + domain, no path). |
+| 401 on API calls | Set `CLERK_JWKS_URL`; ensure Clerk domain is configured for production. |
+| 403 Manager access | Run `/claim-manager?userId=YOUR_CLERK_USER_ID&secret=MANAGER_SECRET` or use `/user/setup` with the correct secret. |
+| Backend 500 on startup | Check `ENVIRONMENT=production` and that `MANAGER_SECRET` is not the default value. |
