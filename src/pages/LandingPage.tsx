@@ -119,6 +119,75 @@ export default function LandingPage() {
         </motion.div>
       </section>
 
+      {/* ─── Key Metrics Strip ───────────────────────────────────────────── */}
+      <section className="relative border-y border-white/5 bg-slate-900/30 overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(6,182,212,0.04),transparent_70%)] pointer-events-none" />
+        <div className="mx-auto max-w-5xl px-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-white/5">
+            {[
+              {
+                icon: Zap,
+                stat: "< 2 min",
+                label: "Full AI decision",
+                sub: "Any time, any day",
+                color: "text-cyan-400",
+                bg: "bg-cyan-500/10",
+                ring: "ring-cyan-500/30",
+                glow: "0 0 12px rgba(6,182,212,0.5)",
+              },
+              {
+                icon: BrainCircuit,
+                stat: "4",
+                label: "Specialised agents",
+                sub: "Working in sequence",
+                color: "text-indigo-400",
+                bg: "bg-indigo-500/10",
+                ring: "ring-indigo-500/30",
+                glow: "0 0 12px rgba(99,102,241,0.5)",
+              },
+              {
+                icon: ShieldCheck,
+                stat: "Zero",
+                label: "Bias tolerance",
+                sub: "CFPB-screened output",
+                color: "text-emerald-400",
+                bg: "bg-emerald-500/10",
+                ring: "ring-emerald-500/30",
+                glow: "0 0 12px rgba(16,185,129,0.5)",
+              },
+              {
+                icon: BarChart3,
+                stat: "100%",
+                label: "Explainable",
+                sub: "Factor-by-factor",
+                color: "text-amber-400",
+                bg: "bg-amber-500/10",
+                ring: "ring-amber-500/30",
+                glow: "0 0 12px rgba(245,158,11,0.5)",
+              },
+            ].map(({ icon: Icon, stat, label, sub, color, bg, ring, glow }, i) => (
+              <motion.div
+                key={label}
+                initial={{ opacity: 0, y: 16 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: i * 0.1 }}
+                className="flex flex-col items-center text-center py-10 px-6"
+              >
+                <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${bg} ring-1 ${ring}`}>
+                  <Icon className={`h-5 w-5 ${color}`} style={{ filter: `drop-shadow(${glow})` }} />
+                </div>
+                <p className={`text-3xl md:text-4xl font-extrabold tracking-tight ${color} mb-1`} style={{ textShadow: glow }}>
+                  {stat}
+                </p>
+                <p className="text-sm font-semibold text-white mb-0.5">{label}</p>
+                <p className="text-xs text-slate-500">{sub}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ─── Features (Alternating Layout) ─────────────────────────────────── */}
       <section id="features" className="relative py-24 md:py-32">
         <div className="mx-auto max-w-7xl px-6">
@@ -421,14 +490,101 @@ export default function LandingPage() {
              <div className="relative">
                 {/* Decorative glowing backplate */}
                 <div className="absolute -inset-4 rounded-3xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 blur-2xl z-0" />
-                <div className="relative z-10 aspect-square md:aspect-[4/5] overflow-hidden rounded-3xl bg-slate-800 border border-white/10 shadow-2xl">
-                   {/* Placeholder for real image, using a sleek gradient/texture for now to fit the prompt 'beautiful design without breaking code' */}
-                   <div className="absolute inset-0 bg-gradient-to-t from-[#0A0F1C] via-transparent to-transparent z-10" />
-                   <img 
-                      src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1171&q=80" 
-                      alt="Students on campus" 
-                      className="absolute inset-0 h-full w-full object-cover mix-blend-luminosity opacity-60 transition-transform duration-1000 hover:scale-105"
-                   />
+
+                {/* ── Mock Dashboard ── */}
+                <div className="relative z-10 overflow-hidden rounded-3xl bg-[#0D1220] border border-white/10 shadow-2xl">
+                  {/* Dashboard top bar */}
+                  <div className="flex items-center justify-between px-4 py-3 bg-[#0A0F1C] border-b border-white/5">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-cyan-500/20 ring-1 ring-cyan-500/40">
+                        <BrainCircuit className="h-2.5 w-2.5 text-cyan-400" />
+                      </div>
+                      <span className="text-[10px] font-bold text-white tracking-tight">LoanWise AI</span>
+                      <span className="text-[10px] text-slate-500">/ Manager Dashboard</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="flex items-center gap-1 text-[9px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                        <span className="h-1 w-1 rounded-full bg-emerald-400 animate-pulse" />
+                        Live
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Stat cards row */}
+                  <div className="grid grid-cols-3 gap-2 p-3">
+                    {[
+                      { label: "Applications", value: "248", change: "+12 today", color: "text-cyan-400", bg: "bg-cyan-500/10" },
+                      { label: "Approval Rate", value: "71%", change: "+3% this week", color: "text-emerald-400", bg: "bg-emerald-500/10" },
+                      { label: "Avg. Decision", value: "1.8 min", change: "AI pipeline", color: "text-indigo-400", bg: "bg-indigo-500/10" },
+                    ].map((s) => (
+                      <div key={s.label} className={`rounded-xl ${s.bg} border border-white/5 p-2.5`}>
+                        <p className="text-[9px] text-slate-400 mb-1">{s.label}</p>
+                        <p className={`text-base font-black ${s.color} leading-none mb-0.5`}>{s.value}</p>
+                        <p className="text-[8px] text-slate-500">{s.change}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Mini bar chart */}
+                  <div className="mx-3 mb-3 rounded-xl bg-slate-800/50 border border-white/5 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">Weekly Applications</span>
+                      <span className="text-[9px] text-cyan-400">↑ 18%</span>
+                    </div>
+                    <div className="flex items-end gap-1 h-10">
+                      {[30, 55, 40, 70, 60, 85, 72].map((h, i) => (
+                        <div key={i} className="flex-1 rounded-t-sm bg-gradient-to-t from-cyan-600 to-cyan-400 opacity-80" style={{ height: `${h}%` }} />
+                      ))}
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+                        <span key={i} className="flex-1 text-center text-[7px] text-slate-600">{d}</span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Loan applications list */}
+                  <div className="mx-3 mb-3 rounded-xl border border-white/5 overflow-hidden">
+                    <div className="flex items-center justify-between bg-slate-800/40 px-3 py-2">
+                      <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">Recent Applications</span>
+                      <span className="text-[9px] text-cyan-400">View all →</span>
+                    </div>
+                    {[
+                      { name: "James T.", amount: "$45,000", purpose: "Home", status: "approved", risk: "22%", color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+                      { name: "Priya M.", amount: "$12,500", purpose: "Auto", status: "pending", risk: "41%", color: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
+                      { name: "Chen W.", amount: "$8,000",  purpose: "Personal", status: "denied",  risk: "68%", color: "bg-red-500/20 text-red-400 border-red-500/30" },
+                      { name: "Sofia R.", amount: "$22,000", purpose: "Business", status: "approved", risk: "28%", color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+                    ].map((app) => (
+                      <div key={app.name} className="flex items-center justify-between px-3 py-2 border-t border-white/[0.04] bg-slate-900/30">
+                        <div className="flex items-center gap-2">
+                          <div className="h-5 w-5 rounded-full bg-slate-700 flex items-center justify-center text-[8px] text-slate-300 font-bold shrink-0">
+                            {app.name[0]}
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-medium text-slate-200">{app.name}</p>
+                            <p className="text-[8px] text-slate-500">{app.purpose} · {app.amount}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[8px] text-slate-500">Risk {app.risk}</span>
+                          <span className={`text-[8px] px-1.5 py-0.5 rounded-full border font-semibold capitalize ${app.color}`}>
+                            {app.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* AI agent pipeline mini strip */}
+                  <div className="mx-3 mb-3 flex items-center gap-2 rounded-xl bg-slate-800/30 border border-white/5 px-3 py-2">
+                    <span className="text-[9px] text-slate-500 shrink-0">AI Pipeline:</span>
+                    {["RiskAssessor", "EmailGen", "BiasDetector", "Recommender"].map((a, i, arr) => (
+                      <div key={a} className="flex items-center gap-1">
+                        <span className="text-[8px] text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded-full">{a}</span>
+                        {i < arr.length - 1 && <ChevronRight className="h-2.5 w-2.5 text-slate-600 shrink-0" />}
+                      </div>
+                    ))}
+                  </div>
                 </div>
              </div>
           </motion.div>
@@ -588,90 +744,167 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ─── Why LoanWise AI — USPs ──────────────────────────────────────── */}
-      <section className="py-24 md:py-32">
+      {/* ─── Why LoanWise AI — USP Bento Grid ───────────────────────────── */}
+      <section id="why-us" className="py-24 md:py-32">
         <div className="mx-auto max-w-7xl px-6">
           <motion.div
             initial="hidden"
             whileInView="visible"
             viewport={{ once: true, margin: "-100px" }}
             variants={fadeUp}
-            className="text-center mb-16"
+            className="text-center mb-14"
           >
             <Badge variant="outline" className="mb-4 border-cyan-500/30 text-cyan-400 bg-cyan-500/10">Our edge</Badge>
             <h2 className="text-3xl font-bold tracking-tight text-white md:text-5xl mb-4">
-              Why LoanWise AI?
+              The smarter way to lend & borrow
             </h2>
             <p className="text-slate-400 max-w-xl mx-auto">
-              Six reasons why borrowers and lenders choose an intelligent platform over the status quo.
+              Built for speed, fairness, and transparency — from the first form field to the final decision letter.
             </p>
           </motion.div>
 
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {/* Bento grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 auto-rows-auto">
+
+            {/* ── Hero card: < 2 min (spans 2 cols) ── */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="md:col-span-2 relative overflow-hidden rounded-3xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 via-slate-900/60 to-slate-900/80 p-8"
+            >
+              <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4 pointer-events-none" />
+              <div className="relative z-10">
+                <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-cyan-500/15 ring-1 ring-cyan-500/40">
+                  <Clock className="h-5 w-5 text-cyan-400" />
+                </div>
+                <div className="text-5xl md:text-7xl font-black text-white tracking-tight leading-none mb-2" style={{ textShadow: "0 0 40px rgba(6,182,212,0.4)" }}>
+                  &lt; 2 <span className="text-cyan-400">min</span>
+                </div>
+                <p className="text-slate-400 text-sm md:text-base mb-6 max-w-md">
+                  Full AI decision — risk score, decision letter, bias check, and product alternatives —
+                  delivered in under 2 minutes. Traditional banks take 1–2 weeks.
+                </p>
+                <div className="flex flex-wrap gap-6 mb-6 border-t border-white/5 pt-6">
+                  {[
+                    { val: "4", label: "AI agents" },
+                    { val: "24/7", label: "Available" },
+                    { val: "100%", label: "Explainable" },
+                  ].map(({ val, label }) => (
+                    <div key={label}>
+                      <p className="text-xl font-bold text-white">{val}</p>
+                      <p className="text-xs text-slate-500 uppercase tracking-wider">{label}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3 py-1 text-xs font-semibold text-emerald-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    LIVE DATA
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 px-3 py-1 text-xs font-semibold text-cyan-400">
+                    <Sparkles className="h-3 w-3" />
+                    AI POWERED
+                  </span>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* ── Bias-free card ── */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.1 }}
+              className="relative overflow-hidden rounded-3xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-slate-900/60 to-slate-900/80 p-7"
+            >
+              <div className="absolute bottom-0 right-0 w-32 h-32 bg-emerald-500/15 rounded-full blur-2xl pointer-events-none" />
+              <div className="relative z-10 h-full flex flex-col">
+                <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/15 ring-1 ring-emerald-500/40">
+                  <ShieldCheck className="h-5 w-5 text-emerald-400" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">Bias-free by design</h3>
+                <p className="text-sm text-slate-400 mb-5 leading-relaxed">
+                  Every generated communication is screened by the <span className="text-emerald-400 font-medium">BiasDetector agent</span> against CFPB fair lending rules before anyone sees it.
+                </p>
+                <div className="mt-auto rounded-xl bg-slate-800/60 border border-white/5 p-4 space-y-2.5">
+                  {[
+                    { label: "Bias Score", val: "0.02", bar: 2, color: "bg-emerald-400" },
+                    { label: "Toxicity Score", val: "0.01", bar: 1, color: "bg-emerald-400" },
+                  ].map((m) => (
+                    <div key={m.label}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-slate-400">{m.label}</span>
+                        <span className="text-emerald-400 font-semibold">{m.val} ✓</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-700 rounded-full overflow-hidden">
+                        <div className={`h-full ${m.color} rounded-full`} style={{ width: `${m.bar}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-slate-500 pt-1">Passed — CFPB compliant output</p>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* ── Bottom row: 3 equal cards ── */}
             {[
-              {
-                icon: Clock,
-                color: "text-cyan-400",
-                bg: "bg-cyan-500/10",
-                ring: "ring-cyan-500/20",
-                title: "2 minutes, not 2 weeks",
-                desc: "Our AI pipeline evaluates and returns a full decision — with factors, email, and alternatives — in under 2 minutes, any time of day.",
-              },
               {
                 icon: BarChart3,
                 color: "text-indigo-400",
-                bg: "bg-indigo-500/10",
-                ring: "ring-indigo-500/20",
-                title: "Fully explainable decisions",
-                desc: "Every outcome shows the exact risk factors, their contributions, and the industry thresholds used. No black boxes, ever.",
-              },
-              {
-                icon: ShieldCheck,
-                color: "text-emerald-400",
-                bg: "bg-emerald-500/10",
-                ring: "ring-emerald-500/20",
-                title: "Bias-free by design",
-                desc: "The BiasDetector agent screens every generated communication against CFPB fair lending rules before it reaches anyone.",
-              },
-              {
-                icon: Zap,
-                color: "text-amber-400",
-                bg: "bg-amber-500/10",
-                ring: "ring-amber-500/20",
-                title: "Alternatives when denied",
-                desc: "Rejection is not a dead end. Denied applicants instantly receive personalised product recommendations matched to their profile.",
+                border: "border-indigo-500/20",
+                from: "from-indigo-500/10",
+                ring: "ring-indigo-500/40",
+                bg: "bg-indigo-500/15",
+                glow: "bg-indigo-500/15",
+                stat: "100%",
+                title: "Fully explainable",
+                desc: "Risk factors, contributions, and industry thresholds shown for every single decision. No black boxes.",
               },
               {
                 icon: Lock,
                 color: "text-rose-400",
-                bg: "bg-rose-500/10",
-                ring: "ring-rose-500/20",
+                border: "border-rose-500/20",
+                from: "from-rose-500/10",
+                ring: "ring-rose-500/40",
+                bg: "bg-rose-500/15",
+                glow: "bg-rose-500/15",
+                stat: "Soft",
                 title: "No credit impact",
-                desc: "The free eligibility check uses a soft assessment only — no hard credit inquiry and no impact to your credit score.",
+                desc: "Free eligibility check uses a soft assessment only — zero hard inquiry, zero credit score impact.",
               },
               {
-                icon: TrendingUp,
-                color: "text-violet-400",
-                bg: "bg-violet-500/10",
-                ring: "ring-violet-500/20",
-                title: "CFPB & Fannie Mae aligned",
-                desc: "Risk scoring follows published CFPB guidelines, Fannie Mae conventional limits, and FHA thresholds for consistent, regulation-ready decisions.",
+                icon: Zap,
+                color: "text-amber-400",
+                border: "border-amber-500/20",
+                from: "from-amber-500/10",
+                ring: "ring-amber-500/40",
+                bg: "bg-amber-500/15",
+                glow: "bg-amber-500/15",
+                stat: "5+",
+                title: "Alternatives when denied",
+                desc: "Denied applicants get personalised product recommendations — smaller loans, FHA, credit cards — matched by AI.",
               },
-            ].map((usp, i) => (
+            ].map((card, i) => (
               <motion.div
-                key={usp.title}
-                initial={{ opacity: 0, y: 20 }}
+                key={card.title}
+                initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: i * 0.08 }}
+                transition={{ duration: 0.6, delay: 0.1 + i * 0.1 }}
                 whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                className="rounded-2xl border border-white/8 bg-white/[0.03] p-6 hover:border-white/20 transition-colors"
+                className={`relative overflow-hidden rounded-3xl border ${card.border} bg-gradient-to-br ${card.from} via-slate-900/60 to-slate-900/80 p-7 group`}
               >
-                <div className={`mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl ring-1 ${usp.bg} ${usp.ring}`}>
-                  <usp.icon className={`h-5 w-5 ${usp.color}`} />
+                <div className={`absolute bottom-0 right-0 w-24 h-24 ${card.glow} rounded-full blur-2xl opacity-60 pointer-events-none`} />
+                <div className="relative z-10">
+                  <div className={`mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl ${card.bg} ring-1 ${card.ring}`}>
+                    <card.icon className={`h-5 w-5 ${card.color}`} />
+                  </div>
+                  <div className={`text-4xl font-black ${card.color} mb-1 tracking-tight`}>{card.stat}</div>
+                  <h3 className="text-base font-bold text-white mb-2">{card.title}</h3>
+                  <p className="text-sm text-slate-400 leading-relaxed">{card.desc}</p>
                 </div>
-                <h3 className="mb-2 font-semibold text-white">{usp.title}</h3>
-                <p className="text-sm text-slate-400 leading-relaxed">{usp.desc}</p>
               </motion.div>
             ))}
           </div>
