@@ -13,7 +13,7 @@
 
 An intelligent lending system that automates the full loan origination workflow — from application to decision — using a **multi-agent AI pipeline** built on Google Gemini 2.5 Flash with OpenAI fallback and deterministic heuristics.
 
-[Live Demo](https://loanwise-ai-weld.vercel.app) · [API Docs](https://loanwise-ai-backend-production.up.railway.app/docs) · [Deployment Guide](docs/DEPLOYMENT.md)
+[**Live App**](https://loanwise-ai-weld.vercel.app/) · [API Docs](https://loanwise-ai-backend-production.up.railway.app/docs) · [Deployment Guide](docs/DEPLOYMENT.md)
 
 </div>
 
@@ -78,6 +78,41 @@ Every decision is fully explainable — customers see exactly which factors infl
 ---
 
 ## System Architecture
+
+```mermaid
+flowchart TB
+    subgraph Client["🖥️ Client (Vercel)"]
+        CP[Customer Portal]
+        MD[Manager Dashboard]
+    end
+
+    subgraph Backend["⚙️ FastAPI Backend (Railway)"]
+        Auth[Auth & Security]
+        API[REST API Layer]
+        BTE[Background Task Engine]
+    end
+
+    subgraph AI["🤖 AI Agent Pipeline"]
+        RA[RiskAssessor]
+        PR[ProductRecommender]
+        EG[EmailGenerator]
+        BD[BiasDetector]
+    end
+
+    DB[(SQLite)]
+
+    CP -->|HTTPS + JWT| API
+    MD -->|HTTPS + JWT| API
+    API --> Auth
+    API --> BTE
+    BTE --> DB
+    BTE --> RA
+    RA --> PR
+    PR --> EG
+    EG --> BD
+```
+
+### Detailed Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
