@@ -184,7 +184,62 @@ export default function ApplicationStatusPage() {
               </div>
             ))}
           </div>
-          <div className="mt-6 flex items-center justify-center gap-2 text-xs text-slate-400 dark:text-slate-500">
+          {/* Status timeline */}
+          <div className="mt-8 w-full max-w-sm mx-auto">
+            {(() => {
+              const steps = [
+                { label: "Submitted", desc: "Application received" },
+                { label: "AI Processing", desc: "Agents evaluating profile" },
+                { label: "Manager Review", desc: "Final human check" },
+                { label: "Decision", desc: "Outcome issued" },
+              ];
+              const activeIdx =
+                loan.status === "processing" ? 1
+                : loan.status === "pending_review" ? 2
+                : 0;
+              return (
+                <div className="flex flex-col gap-0">
+                  {steps.map((step, i) => {
+                    const isDone = i < activeIdx;
+                    const isActive = i === activeIdx;
+                    const isPending = i > activeIdx;
+                    return (
+                      <div key={step.label} className="flex items-start gap-3">
+                        <div className="flex flex-col items-center">
+                          <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                            isDone
+                              ? "border-emerald-500 bg-emerald-500"
+                              : isActive
+                              ? "border-blue-400 bg-blue-400/20"
+                              : "border-slate-600 bg-transparent"
+                          }`}>
+                            {isDone ? (
+                              <CheckCircle2 className="h-4 w-4 text-white" />
+                            ) : isActive ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-400" />
+                            ) : (
+                              <span className="h-2 w-2 rounded-full bg-slate-600" />
+                            )}
+                          </div>
+                          {i < steps.length - 1 && (
+                            <div className={`w-0.5 h-8 mt-0.5 rounded-full transition-colors ${isDone ? "bg-emerald-500" : "bg-slate-700"}`} />
+                          )}
+                        </div>
+                        <div className="pt-0.5 pb-6">
+                          <p className={`text-sm font-medium ${isDone ? "text-emerald-400" : isActive ? "text-blue-300" : "text-slate-500"}`}>
+                            {step.label}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-600">{step.desc}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+
+          <div className="mt-2 flex items-center justify-center gap-2 text-xs text-slate-400 dark:text-slate-500">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             Checking for updates every 5 seconds…
           </div>

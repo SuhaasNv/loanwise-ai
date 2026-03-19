@@ -10,6 +10,10 @@ import {
   Clock,
   BarChart3,
   Lock,
+  XCircle,
+  Users,
+  FileText,
+  TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -522,6 +526,192 @@ export default function LandingPage() {
               </div>
             </motion.div>
           </div>
+        </div>
+      </section>
+
+      {/* ─── Traditional vs LoanWise AI Comparison ──────────────────────── */}
+      <section className="py-24 md:py-32 bg-slate-900/40 border-y border-white/5">
+        <div className="mx-auto max-w-5xl px-6">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-100px" }}
+            variants={fadeUp}
+            className="text-center mb-14"
+          >
+            <Badge variant="outline" className="mb-4 border-indigo-500/30 text-indigo-400 bg-indigo-500/10">Why switch?</Badge>
+            <h2 className="text-3xl font-bold tracking-tight text-white md:text-5xl mb-4">
+              Traditional banks vs LoanWise AI
+            </h2>
+            <p className="text-slate-400 max-w-xl mx-auto">
+              See how AI-driven lending compares to the legacy process.
+            </p>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.7 }}
+            className="overflow-hidden rounded-2xl border border-white/10"
+          >
+            {/* Header row */}
+            <div className="grid grid-cols-3 bg-slate-800/60">
+              <div className="px-6 py-4 text-xs font-semibold uppercase tracking-widest text-slate-500">Criteria</div>
+              <div className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-widest text-slate-400">Traditional Bank</div>
+              <div className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-widest text-cyan-400">LoanWise AI</div>
+            </div>
+            {[
+              { criteria: "Decision time", traditional: "1 – 2 weeks", loanwise: "Under 2 minutes" },
+              { criteria: "Bias screening", traditional: "Manual review", loanwise: "Automated CFPB check" },
+              { criteria: "Explainability", traditional: "Black box", loanwise: "Factor-by-factor breakdown" },
+              { criteria: "Denied? What next?", traditional: "Generic rejection", loanwise: "Tailored product alternatives" },
+              { criteria: "Credit inquiry", traditional: "Hard pull required", loanwise: "Soft check for eligibility" },
+              { criteria: "Availability", traditional: "Business hours only", loanwise: "24 / 7 instant processing" },
+            ].map((row, i) => (
+              <div
+                key={row.criteria}
+                className={`grid grid-cols-3 border-t border-white/5 ${i % 2 === 0 ? "bg-white/[0.02]" : ""}`}
+              >
+                <div className="px-6 py-4 text-sm font-medium text-slate-300">{row.criteria}</div>
+                <div className="px-6 py-4 flex items-center justify-center gap-2 text-sm text-slate-500">
+                  <XCircle className="h-4 w-4 text-red-500/70 shrink-0" />
+                  {row.traditional}
+                </div>
+                <div className="px-6 py-4 flex items-center justify-center gap-2 text-sm text-emerald-400 font-medium">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  {row.loanwise}
+                </div>
+              </div>
+            ))}
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ─── Why LoanWise AI — USPs ──────────────────────────────────────── */}
+      <section className="py-24 md:py-32">
+        <div className="mx-auto max-w-7xl px-6">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-100px" }}
+            variants={fadeUp}
+            className="text-center mb-16"
+          >
+            <Badge variant="outline" className="mb-4 border-cyan-500/30 text-cyan-400 bg-cyan-500/10">Our edge</Badge>
+            <h2 className="text-3xl font-bold tracking-tight text-white md:text-5xl mb-4">
+              Why LoanWise AI?
+            </h2>
+            <p className="text-slate-400 max-w-xl mx-auto">
+              Six reasons why borrowers and lenders choose an intelligent platform over the status quo.
+            </p>
+          </motion.div>
+
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              {
+                icon: Clock,
+                color: "text-cyan-400",
+                bg: "bg-cyan-500/10",
+                ring: "ring-cyan-500/20",
+                title: "2 minutes, not 2 weeks",
+                desc: "Our AI pipeline evaluates and returns a full decision — with factors, email, and alternatives — in under 2 minutes, any time of day.",
+              },
+              {
+                icon: BarChart3,
+                color: "text-indigo-400",
+                bg: "bg-indigo-500/10",
+                ring: "ring-indigo-500/20",
+                title: "Fully explainable decisions",
+                desc: "Every outcome shows the exact risk factors, their contributions, and the industry thresholds used. No black boxes, ever.",
+              },
+              {
+                icon: ShieldCheck,
+                color: "text-emerald-400",
+                bg: "bg-emerald-500/10",
+                ring: "ring-emerald-500/20",
+                title: "Bias-free by design",
+                desc: "The BiasDetector agent screens every generated communication against CFPB fair lending rules before it reaches anyone.",
+              },
+              {
+                icon: Zap,
+                color: "text-amber-400",
+                bg: "bg-amber-500/10",
+                ring: "ring-amber-500/20",
+                title: "Alternatives when denied",
+                desc: "Rejection is not a dead end. Denied applicants instantly receive personalised product recommendations matched to their profile.",
+              },
+              {
+                icon: Lock,
+                color: "text-rose-400",
+                bg: "bg-rose-500/10",
+                ring: "ring-rose-500/20",
+                title: "No credit impact",
+                desc: "The free eligibility check uses a soft assessment only — no hard credit inquiry and no impact to your credit score.",
+              },
+              {
+                icon: TrendingUp,
+                color: "text-violet-400",
+                bg: "bg-violet-500/10",
+                ring: "ring-violet-500/20",
+                title: "CFPB & Fannie Mae aligned",
+                desc: "Risk scoring follows published CFPB guidelines, Fannie Mae conventional limits, and FHA thresholds for consistent, regulation-ready decisions.",
+              },
+            ].map((usp, i) => (
+              <motion.div
+                key={usp.title}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: i * 0.08 }}
+                whileHover={{ y: -4, transition: { duration: 0.2 } }}
+                className="rounded-2xl border border-white/8 bg-white/[0.03] p-6 hover:border-white/20 transition-colors"
+              >
+                <div className={`mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl ring-1 ${usp.bg} ${usp.ring}`}>
+                  <usp.icon className={`h-5 w-5 ${usp.color}`} />
+                </div>
+                <h3 className="mb-2 font-semibold text-white">{usp.title}</h3>
+                <p className="text-sm text-slate-400 leading-relaxed">{usp.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Compliance & Standards Trust Strip ──────────────────────────── */}
+      <section className="py-14 border-y border-white/5 bg-slate-900/30">
+        <div className="mx-auto max-w-5xl px-6">
+          <motion.p
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            className="mb-10 text-center text-xs font-semibold uppercase tracking-widest text-slate-500"
+          >
+            Aligned with industry standards &amp; regulations
+          </motion.p>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="flex flex-wrap items-center justify-center gap-6 md:gap-10"
+          >
+            {[
+              { label: "CFPB Fair Lending", icon: ShieldCheck, color: "text-cyan-400", bg: "bg-cyan-500/10", ring: "ring-cyan-500/20" },
+              { label: "Fannie Mae Conventional", icon: FileText, color: "text-indigo-400", bg: "bg-indigo-500/10", ring: "ring-indigo-500/20" },
+              { label: "FHA Guidelines", icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-500/10", ring: "ring-emerald-500/20" },
+              { label: "OWASP API Top 10", icon: Lock, color: "text-amber-400", bg: "bg-amber-500/10", ring: "ring-amber-500/20" },
+              { label: "MAS-Aligned Practices", icon: Users, color: "text-rose-400", bg: "bg-rose-500/10", ring: "ring-rose-500/20" },
+            ].map((badge) => (
+              <div
+                key={badge.label}
+                className={`flex items-center gap-2.5 rounded-full border border-white/10 ${badge.bg} ring-1 ${badge.ring} px-4 py-2`}
+              >
+                <badge.icon className={`h-4 w-4 ${badge.color}`} />
+                <span className={`text-xs font-semibold ${badge.color}`}>{badge.label}</span>
+              </div>
+            ))}
+          </motion.div>
         </div>
       </section>
 
