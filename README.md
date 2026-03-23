@@ -30,6 +30,8 @@ An intelligent lending system that automates the full loan origination workflow 
   - [Agent 3: EmailGenerator](#agent-3-emailgenerator)
   - [Agent 4: BiasDetector](#agent-4-biasdetector)
   - [Agent 5: DocumentVerifier](#agent-5-documentverifier)
+  - [Extended AI: intake, policy, copilot & compliance](#extended-ai-intake-policy-copilot--compliance)
+  - [Agent observability](#agent-observability)
   - [Orchestration & Fallback Strategy](#orchestration--fallback-strategy)
 - [Risk Assessment Model](#risk-assessment-model)
 - [Security](#security)
@@ -52,7 +54,10 @@ LoanWise AI is a full-stack, production-grade loan origination platform designed
 2. **Recommends alternative products** for denied applicants
 3. **Generates personalised decision letters** with warmth and clarity
 4. **Screens all communications** for discriminatory language (CFPB compliance)
-5. **Verifies supporting documents** via AI-powered extraction
+5. **Verifies supporting documents** via AI-powered extraction  
+6. **Pre-submission intake review** for applicants (readiness score, flags, suggestions)  
+7. **Manager copilot briefs** and **compliance narratives** (ECOA-style text + customer FAQ)  
+8. **Configurable lending policy** checked during underwriting, with **agent observability** (latency, model) in the dashboard
 
 Every decision is fully explainable — customers see exactly which factors influenced the outcome.
 
@@ -64,12 +69,19 @@ Every decision is fully explainable — customers see exactly which factors infl
 
 | Feature | Description |
 |---------|-------------|
-| **Multi-agent AI pipeline** | 5 specialised agents in a sequential, context-sharing pipeline |
+| **Multi-agent AI pipeline** | Core underwriting flow (risk → optional policy → recommendations → email → bias) plus document fusion, intake, copilot, and compliance agents |
 | **Dual AI provider** | Gemini 2.5 Flash as primary; OpenAI GPT-4o-mini as fallback; heuristics as last resort |
 | **Explainable decisions** | Risk factors, contributions, and industry thresholds shown for every application |
 | **Bias auto-remediation** | BiasDetector triggers automatic email rewrites if discriminatory language is detected |
 | **Product recommendations** | Contextual alternative products for denied applicants with personalised match scores |
 | **Document intelligence** | AI-powered extraction and cross-validation of payslips, IDs, and bank statements |
+| **Document–risk fusion** | Verified uploads summarized into the pipeline; high-severity mismatches surface in risk logs |
+| **Intake advisor** | Authenticated `POST /loan/intake-review` + review-step UI before submit |
+| **Manager copilot** | Pre-decision brief (checklist, suggested action, questions) on loan detail while `pending_review` |
+| **Compliance narrative** | Regulator-style narrative + customer FAQ for completed loans; copy-to-audit flow |
+| **Lending policy pack** | Managers edit plain-English policy in Settings; **PolicyChecker** runs when policy is set |
+| **Agent observability** | `agent_logs` stores `latencyMs` and `model`; Agent Activity filters by agent and status |
+| **Pipeline progress UI** | Step-aligned percent + transform-based bar so the bar matches the on-screen percentage |
 | **Manager dashboard** | Real-time analytics, loan queue, AI decisions, audit trail, CSV export |
 | **Multi-step customer portal** | Guided application with real-time validation and draft persistence |
 | **Role-based authentication** | Clerk JWT with RS256 verification; roles stored server-side, never trusted from client |
@@ -94,6 +106,7 @@ flowchart TB
 
     subgraph AI["🤖 AI Agent Pipeline"]
         RA[RiskAssessor]
+        PC[PolicyChecker]
         PR[ProductRecommender]
         EG[EmailGenerator]
         BD[BiasDetector]
@@ -107,7 +120,8 @@ flowchart TB
     API --> BTE
     BTE --> DB
     BTE --> RA
-    RA --> PR
+    RA --> PC
+    PC --> PR
     PR --> EG
     EG --> BD
 ```
@@ -144,7 +158,7 @@ flowchart TB
 │   └──────────────────┘  └──────────────────┘  └──────────────────────────────┘   │
 │                                    │                                               │
 │                        SQLite (loanwise.db)                                       │
-│          loans · users · agent_logs · audit_logs · documents                      │
+│          loans (incl. policyResult) · users · agent_logs · audit_logs · documents  │
 └────────────────────────────────────┼─────────────────────────────────────────────┘
                                      │
                                      ▼
@@ -152,25 +166,12 @@ flowchart TB
 │                            AI AGENT PIPELINE                                      │
 │                         pipeline.py · run_pipeline()                              │
 │                                                                                    │
-│  ┌─────────────────┐    ┌──────────────────┐    ┌────────────────┐               │
-│  │  RiskAssessor   │───▶│ ProductRecommender│───▶│ EmailGenerator │               │
-│  │                 │    │  (if denied only) │    │                │               │
-│  │  • CFPB/FHA     │    │  • Match scoring  │    │  • Personalised│               │
-│  │    guidelines   │    │  • Catalog lookup │    │    letter      │               │
-│  │  • 4 factors    │    │  • Smaller loan   │    │  • Empathetic  │               │
-│  │  • Explainable  │    │    injection      │    │    tone        │               │
-│  └─────────────────┘    └──────────────────┘    └───────┬────────┘               │
-│                                                          │                         │
-│                                                          ▼                         │
-│                                                 ┌────────────────┐                │
-│                                                 │  BiasDetector  │                │
-│                                                 │                │                │
-│                                                 │  • CFPB scan   │                │
-│                                                 │  • Auto-rewrite│                │
-│                                                 │  • ≤2 retries  │                │
-│                                                 └────────────────┘                │
+│  RiskAssessor (+ document fusion)                                                 │
+│       → PolicyChecker (skipped if no lending policy in Settings)                   │
+│       → ProductRecommender (only when risk decision is denied)                     │
+│       → EmailGenerator → BiasDetector (with auto-remediation, ≤2 rewrites)        │
 │                                                                                    │
-│  Each agent: Gemini 2.5 Flash ──▶ OpenAI GPT-4o-mini ──▶ Heuristic fallback      │
+│  Each LLM call: Gemini 2.5 Flash ──▶ OpenAI GPT-4o-mini ──▶ Heuristic fallback     │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -208,32 +209,35 @@ flowchart TB
 
 ## AI Agent Pipeline
 
-The pipeline runs **five specialised agents** sequentially. Agents share context — each agent's output is available to subsequent ones. There is no external queue; orchestration is handled by FastAPI `BackgroundTasks` with a retry loop.
+The **core underwriting pipeline** runs inside `run_pipeline()` in `backend/pipeline.py`. It loads **verified documents** from the DB (for fusion logging and risk context), optionally evaluates a **custom lending policy** from Settings, then runs recommendations, email generation, and bias screening. Agents share context — there is no external queue; orchestration uses FastAPI `BackgroundTasks` with a retry loop.
+
+**On-demand agents** (IntakeAdvisor, ManagerCopilot, ComplianceNarrator) are exposed as separate authenticated routes and do not mutate core loan state except where noted (audit / agent logs).
 
 ```
-Loan Data
+Loan Data + verified_documents[] + optional lendingPolicy (from settings)
     │
     ▼
 ┌──────────────────────────────────────────────────────────────────────────────────┐
 │  _run_pipeline_bg()  —  Retry: up to 2 attempts, exponential backoff (2s, 4s)   │
 │                                                                                    │
-│  run_pipeline(loan_id, income, credit_score, loan_amount, dti, ...)               │
+│  run_pipeline(..., verified_documents=…, policy_text=…)                          │
 │  ─────────────────────────────────────────────────────────────────                │
 │                                                                                    │
-│  1 ▶ RiskAssessor(income, credit_score, loan_amount, dti, employment, purpose)    │
-│      └─▶ risk_result: {riskScore, decision, factors[], reasoning, confidence}     │
+│  1 ▶ RiskAssessor  (+ document fusion summary in agent log when uploads exist)   │
+│      └─▶ risk_result: {riskScore, decision, factors[], reasoning, confidence}      │
 │                                                                                    │
-│  2 ▶ ProductRecommender(income, credit_score, dti, loan_amount, denial_factors)   │
-│      └─▶ recommendations[]  ← only if decision == "denied"                        │
+│  2 ▶ PolicyChecker (only if `lendingPolicy` is non-empty in settings)            │
+│      └─▶ policyResult persisted on loan JSON column `policyResult`               │
 │                                                                                    │
-│  3 ▶ EmailGenerator(name, loan_id, decision, factors, reasoning, recommendations) │
-│      └─▶ email_text (≤350 words, professional, personalised)                      │
+│  3 ▶ ProductRecommender — only if decision == "denied"                           │
+│      └─▶ recommendations[]                                                         │
 │                                                                                    │
-│  4 ▶ BiasDetector(email_text) → {biasScore, toxicityScore, passed}                │
-│      └─▶ if not passed: regenerate email (auto-remediation, max 2 rewrites)       │
+│  4 ▶ EmailGenerator → personalised letter                                        │
 │                                                                                    │
-│  ✓ Success → loan status = pending_review                                          │
-│  ✗ Failure → loan status = error                                                   │
+│  5 ▶ BiasDetector → auto-remediation rewrites (max 2)                            │
+│                                                                                    │
+│  ✓ Success → loan status = pending_review                                        │
+│  ✗ Failure → loan status = error                                                 │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -259,6 +263,8 @@ Loan Data
 ---
 
 ### Agent 2: ProductRecommender
+
+> **Pipeline order:** In `run_pipeline`, **PolicyChecker** runs after RiskAssessor when a lending policy is configured, then ProductRecommender runs for **denied** applications only.
 
 **Purpose:** Suggests the best-fit alternative financial products for denied applicants.
 
@@ -336,6 +342,32 @@ EmailGenerator rewrite #2  →  Accept result regardless
 
 ---
 
+### Extended AI: intake, policy, copilot & compliance
+
+| Capability | Where it runs | What it does |
+|------------|---------------|--------------|
+| **IntakeAdvisor** | `POST /loan/intake-review` (auth); portal review step | JSON: `readinessScore`, `flags[]`, `suggestions[]`, `summary`. Optional `loanId` to append an `agent_logs` row. Heuristic fallback if LLMs fail. |
+| **PolicyChecker** | Inside `run_pipeline` when Settings → **Lending Policy** is set | Compares the application (and AI factors) to your plain-English policy; violations/warnings stored in `policyResult` on the loan. |
+| **ManagerCopilot** | `POST /loans/:id/manager-brief` (manager only) | Executive bullets, suggested approve/deny/escalate, checklist, applicant questions. Logged to `agent_logs` and audit trail. |
+| **ComplianceNarrator** | `POST /loans/:id/narrative` (manager or loan owner) | Only when `decision` is `approved` or `denied`. Returns `regulatorNarrative` + `customerFaq[]`; UI supports copy-to-clipboard. Audit event recorded. |
+
+**Settings:** **Lending Policy** tab persists `lendingPolicy` via `PATCH /settings` (partial merge with other keys). Leave blank to skip PolicyChecker.
+
+---
+
+### Agent observability
+
+Each row in `agent_logs` can include:
+
+| Field | Purpose |
+|-------|---------|
+| `latencyMs` | Wall time for that agent call where instrumented |
+| `model` | e.g. Gemini / OpenAI model id used for that step |
+
+The **Agent Activity** page filters by agent name and status (including **warning**), shows latency in the table and detail dialog, and links to the loan when `applicationId` is set.
+
+---
+
 ### Orchestration & Fallback Strategy
 
 Every LLM call goes through the same three-tier fallback:
@@ -371,8 +403,8 @@ Every LLM call goes through the same three-tier fallback:
 | **Trigger** | `POST /loans/:id/process` (manager only) — returns immediately |
 | **Execution** | FastAPI `BackgroundTasks` — non-blocking, no Redis/Celery needed |
 | **Retries** | Up to 2 pipeline attempts; exponential backoff (2s, 4s) |
-| **Context sharing** | RiskAssessor factors/reasoning → EmailGenerator; recommendations → EmailGenerator |
-| **Audit trail** | Every agent writes to `agent_logs` table with timestamp, status, confidence |
+| **Context sharing** | Risk factors/reasoning → EmailGenerator; recommendations → EmailGenerator; optional `policyResult` on loan |
+| **Audit trail** | `agent_logs`: timestamp, status, confidence; optional `latencyMs`, `model` for observability |
 | **Auto-processing** | Optional `autoProcessLoans` setting triggers pipeline on submission |
 
 ---
@@ -438,6 +470,8 @@ LoanWise AI follows [OWASP API Security Top 10](https://owasp.org/API-Security/)
 | `POST /loans/:id/process`, `POST /loans/:id/decision` | 10 / min |
 | `POST /loan/email`, `POST /loan/bias-check`, `POST /loan/recommendation` | 10 / min |
 | `POST /loan/predict` | 30 / min |
+| `POST /loan/intake-review` | 30 / min |
+| `POST /loans/:id/manager-brief`, `POST /loans/:id/narrative` | 10 / min each |
 | `GET /loans`, `GET /loans/:id` | 60 / min |
 | `GET /loans/export` | 5 / min |
 | **Global ceiling** | 200 / min per IP |
@@ -509,7 +543,7 @@ get_loan_scoped(loan_id, user_id, role)
 loanwise-ai/
 ├── backend/
 │   ├── main.py              # FastAPI app — routes, auth, middleware, rate limiting
-│   ├── pipeline.py          # AI agent pipeline (5 agents, LLM orchestration)
+│   ├── pipeline.py          # AI agents, run_pipeline(), on-demand copilot/intake/narrative
 │   ├── database.py          # SQLite layer with RLS helpers
 │   ├── data.py              # Seed loans, agent logs, product catalog
 │   ├── requirements.txt
@@ -608,7 +642,7 @@ npm run dev:all
 
 1. Sign up at `/sign-up`
 2. Visit `/claim-manager`
-3. Enter `loanwise-manager-2026` (default dev secret)
+3. Enter the same value as **`MANAGER_SECRET`** in `backend/.env` (see `.env.example`; never commit real secrets)
 4. Refresh — you now have manager dashboard access
 
 ### Mock mode
@@ -667,6 +701,13 @@ Interactive Swagger UI: **`http://localhost:8000/docs`**
 | `POST` | `/loan/bias-check` | Customer | Standalone bias check |
 | `POST` | `/loan/recommendation` | Customer | Standalone recommendations |
 | `POST` | `/loan/eligibility-check` | — | Public pre-application check |
+| `POST` | `/loan/intake-review` | Customer | IntakeAdvisor — pre-submit readiness (no DB write) |
+| `POST` | `/loans/:id/manager-brief` | Manager | ManagerCopilot — decision brief + checklist |
+| `POST` | `/loans/:id/narrative` | Customer/Manager | ComplianceNarrator — completed loans only |
+| `GET` | `/settings` | Manager | All settings keys (incl. `lendingPolicy`) |
+| `PUT` | `/settings` | Manager | Replace settings object |
+| `PATCH` | `/settings` | Manager | Partial settings merge (e.g. `lendingPolicy`) |
+| `GET` | `/agents/logs` | Manager | All agent activity rows (`latencyMs`, `model`, …) |
 | `GET` | `/analytics` | Manager | Full analytics bundle |
 | `POST` | `/contact` | — | Contact form submission |
 
@@ -693,6 +734,8 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for full instructions including D
 ---
 
 ## Future Roadmap
+
+**Recently shipped:** IntakeAdvisor pre-submit review, document–risk fusion, PolicyChecker + Settings **Lending Policy**, ManagerCopilot brief, ComplianceNarrator (regulator narrative + FAQ), `agent_logs` latency/model fields and Agent Activity filters, pipeline progress bar aligned with step state.
 
 Planned USP implementations to strengthen LoanWise AI’s competitive edge:
 
@@ -739,7 +782,7 @@ Planned USP implementations to strengthen LoanWise AI’s competitive edge:
 | Feature | Description |
 |---------|-------------|
 | **Model calibration dashboard** | A/B testing of risk thresholds; approval vs. default rate tuning |
-| **Explainability reports** | PDF/HTML export of decision rationale for regulators and customers |
+| **Explainability reports** | PDF/HTML export of decision rationale (narrative + FAQ exist in-app; export to file is next) |
 | **Predictive analytics** | Early warning for default risk; portfolio-level analytics |
 | **Agent orchestration** | LangGraph or custom DAG for complex, branching workflows |
 
