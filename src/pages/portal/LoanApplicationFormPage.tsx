@@ -17,6 +17,10 @@ import {
   ShieldCheck,
   AlertTriangle,
   Save,
+  BrainCircuit,
+  Lightbulb,
+  TriangleAlert,
+  Info,
 } from "lucide-react";
 
 const DRAFT_STORAGE_KEY = "loanwise:loan-form-draft";
@@ -35,6 +39,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { useCreateLoan } from "@/hooks/useCreateLoan";
+import { intakeReview, type IntakeFlag, type IntakeReviewResponse } from "@/lib/api/loans";
 import { motion, AnimatePresence } from "framer-motion";
 
 // ─── NRIC/FIN validation (Singapore) ──────────────────────────────────────────
@@ -189,6 +194,72 @@ function ReviewSection({
   );
 }
 
+// ─── Intake Advisor Panel ─────────────────────────────────────────────────────
+
+function FlagIcon({ type }: { type: IntakeFlag["type"] }) {
+  if (type === "warning" || type === "inconsistency")
+    return <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-amber-500" />;
+  return <Info className="h-3.5 w-3.5 shrink-0 text-blue-400" />;
+}
+
+function IntakeAdvisorPanel({ result, loading }: { result: IntakeReviewResponse | null; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-blue-100 dark:border-blue-900 bg-blue-50/60 dark:bg-blue-950/30 px-4 py-3 text-sm text-blue-700 dark:text-blue-400">
+        <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+        AI is reviewing your application…
+      </div>
+    );
+  }
+  if (!result) return null;
+
+  const scoreColor =
+    result.readinessScore >= 75
+      ? "text-emerald-600 dark:text-emerald-400"
+      : result.readinessScore >= 50
+      ? "text-amber-600 dark:text-amber-400"
+      : "text-red-600 dark:text-red-400";
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/60 dark:bg-violet-950/30 overflow-hidden"
+    >
+      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-violet-100 dark:border-violet-800/60">
+        <BrainCircuit className="h-4 w-4 text-violet-600 dark:text-violet-400 shrink-0" />
+        <span className="text-sm font-semibold text-violet-800 dark:text-violet-300">AI Application Review</span>
+        <span className={`ml-auto text-sm font-bold ${scoreColor}`}>
+          {result.readinessScore}/100
+        </span>
+      </div>
+      <div className="px-4 py-3 space-y-3">
+        <p className="text-xs text-violet-700 dark:text-violet-400 leading-relaxed">{result.summary}</p>
+        {result.flags.length > 0 && (
+          <ul className="space-y-1.5">
+            {result.flags.map((f, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs">
+                <FlagIcon type={f.type} />
+                <span className="text-slate-700 dark:text-slate-300 leading-relaxed">{f.message}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {result.suggestions.length > 0 && (
+          <div className="space-y-1">
+            {result.suggestions.map((s, i) => (
+              <div key={i} className="flex items-start gap-1.5 text-xs text-blue-700 dark:text-blue-400">
+                <Lightbulb className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <span>{s}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function LoanApplicationFormPage() {
@@ -197,6 +268,8 @@ export default function LoanApplicationFormPage() {
   const [step, setStep] = useState(1);
   const [confirmed, setConfirmed] = useState(false);
   const [hasDraft, setHasDraft] = useState(false);
+  const [intakeResult, setIntakeResult] = useState<IntakeReviewResponse | null>(null);
+  const [intakeLoading, setIntakeLoading] = useState(false);
   const { mutate, isPending, error } = useCreateLoan();
 
   // Load saved draft from localStorage
@@ -263,10 +336,30 @@ export default function LoanApplicationFormPage() {
       3: ["loanAmount", "loanPurpose", "employmentType"],
     };
     const valid = await trigger(fieldsPerStep[step]);
-    if (valid) {
-      persistDraft();
-      setStep((s) => s + 1);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+    if (!valid) return;
+    persistDraft();
+    setStep((s) => s + 1);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    // After all fields are known (step 3 → 4), run the AI intake review
+    if (step === 3) {
+      const v = getValues();
+      if (v.income && v.creditScore && v.loanAmount && v.loanPurpose && v.employmentType) {
+        setIntakeLoading(true);
+        setIntakeResult(null);
+        intakeReview({
+          applicantName: v.applicantName || "Applicant",
+          income: Number(v.income),
+          creditScore: Number(v.creditScore),
+          loanAmount: Number(v.loanAmount),
+          debtToIncomeRatio: Number(v.debtToIncomeRatio ?? 0.35),
+          employmentType: v.employmentType,
+          loanPurpose: v.loanPurpose,
+        })
+          .then((res) => setIntakeResult(res))
+          .catch(() => setIntakeResult(null))
+          .finally(() => setIntakeLoading(false));
+      }
     }
   }
 
@@ -554,6 +647,8 @@ export default function LoanApplicationFormPage() {
                 {/* Step 4 — Review & Submit */}
                 {step === 4 && (
                   <div className="space-y-5">
+                    <IntakeAdvisorPanel result={intakeResult} loading={intakeLoading} />
+
                     <div className="rounded-lg border border-blue-100 dark:border-blue-900 bg-blue-50/60 dark:bg-blue-950/40 px-4 py-3 text-sm text-blue-800 dark:text-blue-300 flex items-start gap-2.5">
                       <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-blue-500" />
                       <p>

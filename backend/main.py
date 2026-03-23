@@ -3,6 +3,14 @@ Loanwise AI — FastAPI backend.
 Implements the API spec from docs/api-spec.md.
 Data is persisted in SQLite (loanwise.db) via database.py.
 """
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+_backend_dir = Path(__file__).resolve().parent
+load_dotenv(_backend_dir / ".env")
+load_dotenv(_backend_dir.parent / ".env.local")
+
 import csv
 import io
 import json
@@ -428,6 +436,24 @@ class DocumentUploadRequest(BaseModel):
     declaredName: Optional[str] = None
 
 
+class IntakeReviewRequest(BaseModel):
+    applicantName: str
+    income: float
+    creditScore: int
+    loanAmount: float
+    debtToIncomeRatio: float = 0.35
+    employmentType: str
+    loanPurpose: str
+    loanId: Optional[str] = ""
+
+    @field_validator("creditScore")
+    @classmethod
+    def validate_credit_score(cls, v: int) -> int:
+        if not (300 <= v <= 850):
+            raise ValueError("creditScore must be between 300 and 850")
+        return v
+
+
 # ─── Health ───────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -538,6 +564,13 @@ def get_settings(_role: str = Depends(require_manager)):
 @app.put("/settings")
 def update_settings(req: SettingsUpdateRequest, _role: str = Depends(require_manager)):
     return db.save_settings(req.settings)
+
+
+@app.patch("/settings")
+async def patch_settings(request: Request, _role: str = Depends(require_manager)):
+    """Partial update to settings — merges the provided keys only."""
+    partial = await request.json()
+    return db.save_settings(partial)
 
 
 # ─── Notifications ────────────────────────────────────────────────────────────
@@ -701,6 +734,13 @@ def _run_pipeline_bg(loan_id: str, loan: dict, user_id: str) -> None:
     """
     for attempt in range(1, PIPELINE_MAX_RETRIES + 1):
         try:
+            # Load verified documents for document-risk fusion
+            verified_docs = db.get_documents_for_loan(loan_id)
+
+            # Load custom lending policy from settings (if configured)
+            settings = db.get_settings()
+            policy_text = settings.get("lendingPolicy", "") or ""
+
             pipeline_result = run_pipeline(
                 loan_id=loan_id,
                 income=loan["income"],
@@ -710,6 +750,8 @@ def _run_pipeline_bg(loan_id: str, loan: dict, user_id: str) -> None:
                 employment_type=loan["employmentType"],
                 loan_purpose=loan["loanPurpose"],
                 applicant_name=loan["applicantName"],
+                verified_documents=verified_docs or None,
+                policy_text=policy_text,
             )
             ai_rec = pipeline_result["decision"]
             updates = {
@@ -725,6 +767,8 @@ def _run_pipeline_bg(loan_id: str, loan: dict, user_id: str) -> None:
                 "factors": json.dumps(pipeline_result.get("factors", [])),
                 "status": "pending_review",
             }
+            if pipeline_result.get("policyResult"):
+                updates["policyResult"] = json.dumps(pipeline_result["policyResult"])
             db.update_loan(loan_id, updates)
             db.insert_audit_log(
                 loan_id, user_id, "processed",
@@ -1237,6 +1281,97 @@ def submit_contact(req: ContactRequest, request: Request):
     record = db.insert_contact_request(req.name, req.email, req.subject, req.message)
     logger.info("Contact request from %s (%s): %s", req.name, req.email, req.subject)
     return {"success": True, "id": record["id"], "message": "Your message has been received. We'll respond within 1–2 business days."}
+
+
+# ─── Intake Review ────────────────────────────────────────────────────────────
+
+@app.post("/loan/intake-review")
+@limiter.limit("30/minute")
+def intake_review_endpoint(
+    req: IntakeReviewRequest,
+    request: Request,
+    _user_id: str = Depends(require_auth),
+):
+    """
+    IntakeAdvisor agent — pre-submission readiness check.
+    Returns flags, suggestions, and a readiness score without persisting anything.
+    """
+    from pipeline import intake_review
+    result = intake_review(
+        applicant_name=req.applicantName,
+        income=req.income,
+        credit_score=req.creditScore,
+        loan_amount=req.loanAmount,
+        dti=req.debtToIncomeRatio,
+        employment_type=req.employmentType,
+        loan_purpose=req.loanPurpose,
+        loan_id=req.loanId or "",
+    )
+    return result
+
+
+# ─── Manager Copilot Brief ────────────────────────────────────────────────────
+
+@app.post("/loans/{loan_id}/manager-brief")
+@limiter.limit("10/minute")
+def manager_brief_endpoint(
+    loan_id: str,
+    request: Request,
+    user_id: Optional[str] = Depends(get_user_id),
+    _role: str = Depends(require_manager),
+):
+    """
+    ManagerCopilot agent — generates an executive pre-decision brief.
+    Advisory only; grounded on existing loan data and audit trail.
+    Requires manager role.
+    """
+    loan = db.get_loan_scoped(loan_id, user_id, "manager")
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+
+    audit_entries = db.get_audit_logs(loan_id)
+
+    from pipeline import manager_brief
+    result = manager_brief(loan, audit_entries)
+
+    db.insert_audit_log(
+        loan_id, user_id or "", "copilot_brief",
+        f"Manager copilot brief generated: suggestion={result.get('suggestedDecision')}"
+    )
+    return result
+
+
+# ─── Compliance Narrative ─────────────────────────────────────────────────────
+
+@app.post("/loans/{loan_id}/narrative")
+@limiter.limit("10/minute")
+def narrative_endpoint(
+    loan_id: str,
+    request: Request,
+    user_id: Optional[str] = Depends(get_user_id),
+    role: str = Depends(get_user_role),
+):
+    """
+    ComplianceNarrator agent — ECOA-style regulator narrative + customer FAQ.
+    Accessible to both managers and the loan's owner customer.
+    """
+    loan = db.get_loan_scoped(loan_id, user_id, role)
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+    if loan.get("decision") not in ("approved", "denied"):
+        raise HTTPException(
+            status_code=400,
+            detail="Narrative is only available for completed (approved/denied) applications."
+        )
+
+    from pipeline import generate_narrative
+    result = generate_narrative(loan)
+
+    db.insert_audit_log(
+        loan_id, user_id or "", "narrative_generated",
+        "Compliance narrative and customer FAQ generated"
+    )
+    return result
 
 
 if __name__ == "__main__":

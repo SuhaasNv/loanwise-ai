@@ -20,6 +20,7 @@ import {
   Shield, Gift, PlayCircle, ClipboardList, StickyNote, HelpCircle,
   CheckCircle, XCircle, TrendingUp, TrendingDown, Minus,
   Zap, BrainCircuit, AlertCircle, ThumbsUp, ThumbsDown, HandshakeIcon,
+  FileText, Copy, Check, ListChecks,
 } from "lucide-react";
 import {
   Tooltip,
@@ -28,9 +29,190 @@ import {
 } from "@/components/ui/tooltip";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { updateManagerNotes, getLoanAudit, expressInterest, type AuditEntry } from "@/lib/api/loans";
+import { updateManagerNotes, getLoanAudit, expressInterest, getManagerBrief, getLoanNarrative, type AuditEntry, type ManagerBriefResponse, type NarrativeResponse } from "@/lib/api/loans";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AgentPipelineProgress } from "@/components/ui/agent-pipeline-progress";
+
+// ─── Manager Copilot Panel ────────────────────────────────────────────────────
+
+function ManagerCopilotPanel({ loanId }: { loanId: string }) {
+  const { data, isLoading, isError, refetch, isFetching } = useQuery<ManagerBriefResponse>({
+    queryKey: ["manager-brief", loanId],
+    queryFn: () => getManagerBrief(loanId),
+    enabled: !!loanId,
+    staleTime: 60_000,
+  });
+
+  const decisionColor = data?.suggestedDecision === "approve"
+    ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+    : data?.suggestedDecision === "deny"
+    ? "bg-red-100 text-red-800 border-red-200"
+    : "bg-amber-100 text-amber-800 border-amber-200";
+
+  return (
+    <Card className="border-violet-200 bg-violet-50/40 dark:bg-violet-950/20 dark:border-violet-800">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-lg bg-violet-100 dark:bg-violet-900 flex items-center justify-center">
+              <BrainCircuit className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+            </div>
+            <div>
+              <CardTitle className="text-sm font-semibold text-violet-900 dark:text-violet-200">Manager Copilot</CardTitle>
+              <p className="text-xs text-violet-600 dark:text-violet-400">AI advisory brief — for manager use only</p>
+            </div>
+          </div>
+          <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => refetch()} disabled={isFetching}>
+            {isFetching ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading || isFetching ? (
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+          </div>
+        ) : isError ? (
+          <p className="text-xs text-destructive">Could not generate brief. Click refresh to retry.</p>
+        ) : data ? (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">AI suggestion:</span>
+              <Badge className={`text-xs font-semibold capitalize ${decisionColor}`}>
+                {data.suggestedDecision}
+              </Badge>
+              <span className="text-xs text-muted-foreground ml-auto">
+                {Math.round(data.confidence * 100)}% confidence
+              </span>
+            </div>
+
+            <ul className="space-y-1.5">
+              {data.bullets.map((b, i) => (
+                <li key={i} className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300">
+                  <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-violet-500 shrink-0" />
+                  {b}
+                </li>
+              ))}
+            </ul>
+
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed border-t border-violet-100 dark:border-violet-800 pt-3">
+              {data.summary}
+            </p>
+
+            {data.checklist.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <ListChecks className="h-3 w-3" />Policy Checklist
+                </p>
+                {data.checklist.map((item, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs">
+                    {item.passed === true
+                      ? <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                      : item.passed === false
+                      ? <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
+                      : <Minus className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />}
+                    <span className={item.passed === false ? "text-red-700 dark:text-red-400" : "text-slate-600 dark:text-slate-400"}>{item.item}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {data.questions.length > 0 && (
+              <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 space-y-1">
+                <p className="text-xs font-medium text-amber-700 dark:text-amber-400">Questions for applicant:</p>
+                {data.questions.map((q, i) => (
+                  <p key={i} className="text-xs text-amber-800 dark:text-amber-300">• {q}</p>
+                ))}
+              </div>
+            )}
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Narrative Panel ──────────────────────────────────────────────────────────
+
+function NarrativePanel({ loanId }: { loanId: string }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const { data, isLoading, isError, refetch } = useQuery<NarrativeResponse>({
+    queryKey: ["narrative", loanId],
+    queryFn: () => getLoanNarrative(loanId),
+    enabled: open,
+    staleTime: 300_000,
+  });
+
+  function copyNarrative() {
+    if (!data?.regulatorNarrative) return;
+    navigator.clipboard.writeText(data.regulatorNarrative).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div>
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-1.5 text-xs"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <FileText className="h-3.5 w-3.5" />
+        {open ? "Hide" : "Compliance Narrative"}
+      </Button>
+
+      {open && (
+        <motion.div
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-3 space-y-4"
+        >
+          {isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+            </div>
+          ) : isError ? (
+            <div className="flex items-center gap-2 text-xs text-destructive">
+              <AlertCircle className="h-3.5 w-3.5" />
+              Could not generate narrative.
+              <button className="underline" onClick={() => refetch()}>Retry</button>
+            </div>
+          ) : data ? (
+            <>
+              <div className="rounded-lg border bg-secondary/20 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">ECOA Regulatory Narrative</p>
+                  <Button variant="ghost" size="sm" className="h-6 gap-1 text-xs" onClick={copyNarrative}>
+                    {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                    {copied ? "Copied" : "Copy"}
+                  </Button>
+                </div>
+                <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
+                  {data.regulatorNarrative}
+                </p>
+              </div>
+
+              {data.customerFaq.length > 0 && (
+                <div className="rounded-lg border bg-secondary/10 p-4 space-y-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Customer FAQ</p>
+                  {data.customerFaq.map((item, i) => (
+                    <div key={i}>
+                      <p className="text-xs font-medium text-foreground">{item.q}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{item.a}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : null}
+        </motion.div>
+      )}
+    </div>
+  );
+}
 
 // ─── AI Decision Panel (shown when status = pending_review) ──────────────────
 
@@ -541,6 +723,10 @@ export default function LoanDetailsPage() {
         />
       )}
 
+      {isPendingReview && (
+        <ManagerCopilotPanel loanId={loan.id} />
+      )}
+
       {loan.status === "withdrawn" && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
           This application was withdrawn by the customer.
@@ -844,6 +1030,20 @@ export default function LoanDetailsPage() {
         </TabsContent>
 
         <TabsContent value="audit">
+          <div className="space-y-4">
+          {(loan.decision === "approved" || loan.decision === "denied") && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium">Compliance Narrative</CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">
+                  ECOA-style regulatory narrative and customer FAQ generated by AI. Advisory only.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <NarrativePanel loanId={loan.id} />
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-medium">Audit Trail</CardTitle>
@@ -875,6 +1075,7 @@ export default function LoanDetailsPage() {
               )}
             </CardContent>
           </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

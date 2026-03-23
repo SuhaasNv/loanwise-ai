@@ -1,5 +1,14 @@
-export type AgentStatus = "success" | "failure" | "running";
-export type AgentName = "RiskAssessor" | "EmailGenerator" | "BiasDetector" | "ProductRecommender";
+export type AgentStatus = "success" | "failure" | "running" | "warning";
+export type AgentName =
+  | "RiskAssessor"
+  | "EmailGenerator"
+  | "BiasDetector"
+  | "ProductRecommender"
+  | "DocumentVerifier"
+  | "IntakeAdvisor"
+  | "ManagerCopilot"
+  | "ComplianceNarrator"
+  | "PolicyChecker";
 
 export interface AgentLog {
   id: string;
@@ -9,6 +18,8 @@ export interface AgentLog {
   status: AgentStatus;
   confidenceScore: number;
   applicationId: string;
+  latencyMs?: number;
+  model?: string;
 }
 
 export interface BiasCheckRequest {

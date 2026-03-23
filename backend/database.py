@@ -147,13 +147,21 @@ def init_db() -> None:
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """Add columns introduced after initial schema creation."""
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(loans)").fetchall()}
-    if "managerNotes" not in cols:
+    loan_cols = {r[1] for r in conn.execute("PRAGMA table_info(loans)").fetchall()}
+    if "managerNotes" not in loan_cols:
         conn.execute("ALTER TABLE loans ADD COLUMN managerNotes TEXT DEFAULT ''")
-    if "withdrawnAt" not in cols:
+    if "withdrawnAt" not in loan_cols:
         conn.execute("ALTER TABLE loans ADD COLUMN withdrawnAt TEXT")
-    if "aiRecommendation" not in cols:
+    if "aiRecommendation" not in loan_cols:
         conn.execute("ALTER TABLE loans ADD COLUMN aiRecommendation TEXT")
+    if "policyResult" not in loan_cols:
+        conn.execute("ALTER TABLE loans ADD COLUMN policyResult TEXT")
+
+    agent_cols = {r[1] for r in conn.execute("PRAGMA table_info(agent_logs)").fetchall()}
+    if "latencyMs" not in agent_cols:
+        conn.execute("ALTER TABLE agent_logs ADD COLUMN latencyMs INTEGER DEFAULT 0")
+    if "model" not in agent_cols:
+        conn.execute("ALTER TABLE agent_logs ADD COLUMN model TEXT DEFAULT ''")
     conn.commit()
 
 
@@ -311,11 +319,12 @@ def insert_agent_log(log: dict) -> None:
     conn = get_db()
     conn.execute("""
         INSERT INTO agent_logs
-          (id, agentName, action, timestamp, status, confidenceScore, applicationId)
-        VALUES (?,?,?,?,?,?,?)
+          (id, agentName, action, timestamp, status, confidenceScore, applicationId, latencyMs, model)
+        VALUES (?,?,?,?,?,?,?,?,?)
     """, (
         log["id"], log["agentName"], log["action"], log["timestamp"],
         log["status"], log["confidenceScore"], log["applicationId"],
+        log.get("latencyMs", 0), log.get("model", ""),
     ))
     conn.commit()
     conn.close()

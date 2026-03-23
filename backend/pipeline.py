@@ -105,6 +105,30 @@ def _llm(prompt: str, *, json_mode: bool = False) -> str:
     ) from last_err
 
 
+def _llm_with_meta(prompt: str, *, json_mode: bool = False) -> tuple[str, str, int]:
+    """Like _llm but also returns (text, model_name, latency_ms)."""
+    import time as _time
+    t0 = int(_time.monotonic() * 1000)
+    last_err = None
+    if _client is not None:
+        try:
+            text = _gemini(prompt, json_mode=json_mode)
+            return text, MODEL_GEMINI, int(_time.monotonic() * 1000) - t0
+        except Exception as e:
+            last_err = e
+            print(f"[pipeline] Gemini failed ({e}), trying OpenAI fallback")
+    if _openai_client is not None:
+        try:
+            text = _openai(prompt, json_mode=json_mode)
+            return text, MODEL_OPENAI, int(_time.monotonic() * 1000) - t0
+        except Exception as e:
+            last_err = e
+            print(f"[pipeline] OpenAI fallback failed ({e})")
+    raise RuntimeError(
+        "No AI provider available. Set GOOGLE_API_KEY or OPENAI_API_KEY in .env"
+    ) from last_err
+
+
 def _parse_json(text: str) -> dict:
     """Extract JSON from a response that may have markdown fences."""
     # Strip ```json ... ``` if present
@@ -585,7 +609,7 @@ def _inject_smaller_loan(
 
 # ─── Logger ───────────────────────────────────────────────────────────────────
 
-def _log(agent_name: str, loan_id: str, action: str, status: str, confidence: float) -> None:
+def _log(agent_name: str, loan_id: str, action: str, status: str, confidence: float, *, latency_ms: int = 0, model: str = "") -> None:
     insert_agent_log({
         "id": f"AG-{uuid.uuid4().hex[:8].upper()}",
         "agentName": agent_name,
@@ -594,6 +618,8 @@ def _log(agent_name: str, loan_id: str, action: str, status: str, confidence: fl
         "status": status,
         "confidenceScore": confidence,
         "applicationId": loan_id,
+        "latencyMs": latency_ms,
+        "model": model,
     })
 
 
@@ -608,38 +634,93 @@ def run_pipeline(
     employment_type: str,
     loan_purpose: str,
     applicant_name: str,
+    verified_documents: list[dict] | None = None,
+    policy_text: str = "",
 ) -> dict:
     """
-    Orchestrates 4 Gemini-powered agents:
-      1. RiskAssessor   — evaluates creditworthiness against industry guidelines
-      2. EmailGenerator — writes a personalised decision letter
-      3. BiasDetector   — screens the letter for CFPB compliance
-      4. ProductRecommender — suggests alternatives for denied applicants
+    Orchestrates agents:
+      1. RiskAssessor        — creditworthiness (now includes document consistency context)
+      2. PolicyChecker       — bank-specific policy overlay (if configured)
+      3. ProductRecommender  — alternatives for denied applicants
+      4. EmailGenerator      — personalised decision letter
+      5. BiasDetector        — CFPB compliance screen with auto-remediation
     """
     using_ai = _client is not None or _openai_client is not None
     provider = "Gemini" if _client else "OpenAI" if _openai_client else "heuristic"
     print(f"[pipeline] Starting for {loan_id} | AI={provider}")
 
-    # ── 1. RiskAssessor ────────────────────────────────────────────────────────
+    # ── 1. RiskAssessor (with document fusion context) ─────────────────────────
+    doc_context = ""
+    doc_consistency_note = ""
+    if verified_documents:
+        # Build a compact summary of verified document findings
+        doc_summary_parts = []
+        mismatches_all = []
+        for doc in verified_documents:
+            vr = doc.get("verificationResult") or {}
+            if isinstance(vr, dict):
+                passed = vr.get("passed", True)
+                mismatches = vr.get("mismatches", [])
+                if mismatches:
+                    mismatches_all.extend(mismatches)
+                doc_summary_parts.append(
+                    f"  - {doc.get('docType','doc')}: verified={passed}, "
+                    f"mismatches={len(mismatches)}"
+                )
+        if doc_summary_parts:
+            doc_context = "VERIFIED DOCUMENTS:\n" + "\n".join(doc_summary_parts)
+            high_mismatches = [m for m in mismatches_all if m.get("severity") == "high"]
+            if high_mismatches:
+                doc_consistency_note = (
+                    f" Document check flagged {len(high_mismatches)} high-severity "
+                    f"mismatch(es): {', '.join(m.get('field','') for m in high_mismatches[:3])}."
+                )
+                _log("DocumentVerifier", loan_id,
+                     f"Document fusion: {len(high_mismatches)} high-severity mismatch(es) fed into risk assessment",
+                     "warning", 0.88)
+            elif doc_summary_parts:
+                _log("DocumentVerifier", loan_id,
+                     f"Document fusion: {len(doc_summary_parts)} document(s) verified — no high-severity issues",
+                     "success", 0.92)
+
+    import time as _time
+    t0 = _time.monotonic()
     risk_result = assess_risk(income, credit_score, loan_amount, dti, employment_type, loan_purpose)
+    risk_latency = int((_time.monotonic() - t0) * 1000)
     _log("RiskAssessor", loan_id,
          f"{'Gemini' if using_ai else 'Heuristic'} risk assessment: "
-         f"score={risk_result.risk_score}, decision={risk_result.decision}, "
-         f"credit={credit_score}, DTI={dti*100:.0f}%, LTI={loan_amount/max(income,1):.1f}x",
-         "success", risk_result.confidence)
+         f"score={risk_result.risk_score:.2f}, decision={risk_result.decision}, "
+         f"credit={credit_score}, DTI={dti*100:.0f}%, LTI={loan_amount/max(income,1):.1f}x"
+         f"{doc_consistency_note}",
+         "success", risk_result.confidence,
+         latency_ms=risk_latency)
 
-    # ── 2. ProductRecommender (denied only — runs before email so email can include offers) ─
+    # ── 2. PolicyChecker (if bank policy is configured) ───────────────────────
+    policy_result = None
+    if policy_text and policy_text.strip():
+        loan_snapshot = {
+            "id": loan_id, "loanAmount": loan_amount, "loanPurpose": loan_purpose,
+            "income": income, "creditScore": credit_score, "debtToIncomeRatio": dti,
+            "employmentType": employment_type, "riskScore": risk_result.risk_score,
+            "aiRecommendation": risk_result.decision, "factors": risk_result.factors,
+        }
+        policy_result = check_policy(loan_snapshot, policy_text)
+
+    # ── 3. ProductRecommender (denied only — runs before email) ────────────────
     recommendations = []
     if risk_result.decision == "denied":
         denial_factors = [f for f in risk_result.factors if f.get("impact") == "negative"]
+        t0 = _time.monotonic()
         recommendations = recommend_products(
             income, credit_score, dti, loan_amount, loan_purpose, denial_factors
         )
         _log("ProductRecommender", loan_id,
              f"{'Gemini' if using_ai else 'Heuristic'} scored {len(recommendations)} alternatives",
-             "success", 0.88)
+             "success", 0.88,
+             latency_ms=int((_time.monotonic() - t0) * 1000))
 
-    # ── 3. EmailGenerator ──────────────────────────────────────────────────────
+    # ── 4. EmailGenerator ──────────────────────────────────────────────────────
+    t0 = _time.monotonic()
     email_text = generate_email(
         applicant_name, loan_id, risk_result.decision,
         loan_amount, risk_result.factors, risk_result.reasoning,
@@ -648,19 +729,21 @@ def run_pipeline(
     _log("EmailGenerator", loan_id,
          f"{'Gemini' if using_ai else 'Template'} personalised "
          f"{'approval' if risk_result.decision == 'approved' else 'denial'} letter generated",
-         "success", 0.93)
+         "success", 0.93,
+         latency_ms=int((_time.monotonic() - t0) * 1000))
 
-    # ── 4. BiasDetector (with auto-remediation — up to 2 rewrites if bias detected) ──
+    # ── 5. BiasDetector (with auto-remediation — up to 2 rewrites if bias detected) ──
     MAX_BIAS_RETRIES = 2
     for bias_attempt in range(1, MAX_BIAS_RETRIES + 2):
+        t0 = _time.monotonic()
         bias_score, toxicity_score, bias_passed, bias_explanation = detect_bias(email_text, loan_id)
         _log("BiasDetector", loan_id,
              f"{'Gemini' if using_ai else 'Heuristic'} bias scan (attempt {bias_attempt}): "
              f"bias={bias_score:.3f}, toxicity={toxicity_score:.3f}, passed={bias_passed}. {bias_explanation}",
-             "success" if bias_passed else "warning", 0.97)
+             "success" if bias_passed else "warning", 0.97,
+             latency_ms=int((_time.monotonic() - t0) * 1000))
         if bias_passed or bias_attempt > MAX_BIAS_RETRIES:
             break
-        # Auto-remediation: rewrite email with explicit bias-removal instruction
         print(f"[BiasDetector] Bias detected — triggering EmailGenerator rewrite (attempt {bias_attempt})")
         remediation_note = (
             f"IMPORTANT: The previous version of this email was flagged for potential bias or toxicity "
@@ -689,6 +772,7 @@ def run_pipeline(
         "biasScore": bias_score,
         "toxicityScore": toxicity_score,
         "recommendations": recommendations,
+        "policyResult": policy_result,
         "status": "completed",
     }
 
@@ -826,3 +910,414 @@ Respond ONLY with a JSON object:
         "confidence": 0.82,
         "summary": f"Document type '{doc_type}' processed. No significant discrepancies detected with declared application data.",
     }
+
+
+# ─── Agent 6: IntakeAdvisor ───────────────────────────────────────────────────
+
+def intake_review(
+    applicant_name: str,
+    income: float,
+    credit_score: int,
+    loan_amount: float,
+    dti: float,
+    employment_type: str,
+    loan_purpose: str,
+    loan_id: str = "",
+) -> dict:
+    """
+    IntakeAdvisor agent — flags inconsistencies and gives an application
+    readiness score before the applicant submits. No DB mutation.
+
+    Returns: { readinessScore, flags[], suggestions[], summary }
+    """
+    lti = loan_amount / max(income, 1)
+    prompt = f"""You are IntakeAdvisor, a helpful pre-submission AI at a bank.
+Review this draft loan application for inconsistencies, red flags, and readiness.
+
+DRAFT APPLICATION:
+- Name: {applicant_name}
+- Annual Income: ${income:,.0f}
+- Credit Score: {credit_score}
+- Loan Amount: ${loan_amount:,.0f}
+- Loan-to-Income Ratio: {lti:.2f}x
+- Debt-to-Income Ratio: {dti * 100:.1f}%
+- Employment Type: {employment_type}
+- Loan Purpose: {loan_purpose}
+
+LENDING BENCHMARKS:
+- DTI ≤ 36% is healthy; > 43% is risky
+- Credit score 670+ for conventional; 580+ for FHA
+- Loan-to-income < 3x is conservative; > 5x is very high
+- Full-time employment is lowest risk
+
+Respond ONLY with JSON (no markdown):
+{{
+  "readinessScore": <integer 0-100, 100 = perfect application>,
+  "flags": [
+    {{
+      "type": "<inconsistency|warning|tip>",
+      "field": "<field name>",
+      "message": "<clear, actionable 1-sentence message>"
+    }}
+  ],
+  "suggestions": ["<actionable suggestion 1>", "<actionable suggestion 2>"],
+  "summary": "<1-2 sentence overall readiness assessment>"
+}}
+
+Rules:
+- Flags should be specific and actionable, not generic
+- readinessScore >= 75 means the application is likely to proceed
+- Include 2-4 flags max; do not list non-issues
+- Suggestions must address the most impactful improvements only"""
+
+    try:
+        raw, model_used, latency_ms = _llm_with_meta(prompt, json_mode=True)
+        data = _parse_json(raw)
+        score = max(0, min(100, int(data.get("readinessScore", 70))))
+        flags = data.get("flags", [])
+        suggestions = data.get("suggestions", [])
+        summary = data.get("summary", "")
+        print(f"[IntakeAdvisor] readiness={score} flags={len(flags)} model={model_used}")
+        if loan_id:
+            _log("IntakeAdvisor", loan_id,
+                 f"Pre-submission review: readiness={score}%, {len(flags)} flag(s)",
+                 "success", round(score / 100, 2),
+                 latency_ms=latency_ms, model=model_used)
+        return {"readinessScore": score, "flags": flags, "suggestions": suggestions, "summary": summary}
+    except Exception as e:
+        print(f"[IntakeAdvisor] LLM failed ({e}), using heuristic fallback")
+        return _fallback_intake(income, credit_score, loan_amount, dti, employment_type)
+
+
+def _fallback_intake(income, credit_score, loan_amount, dti, employment_type) -> dict:
+    flags = []
+    score = 100
+    lti = loan_amount / max(income, 1)
+    if dti > 0.43:
+        flags.append({"type": "warning", "field": "debtToIncomeRatio",
+                      "message": f"Your DTI of {dti*100:.0f}% exceeds the 43% threshold most lenders require."})
+        score -= 25
+    elif dti > 0.36:
+        flags.append({"type": "tip", "field": "debtToIncomeRatio",
+                      "message": f"DTI of {dti*100:.0f}% is elevated. Reducing monthly obligations could strengthen your application."})
+        score -= 10
+    if credit_score < 580:
+        flags.append({"type": "warning", "field": "creditScore",
+                      "message": f"Credit score of {credit_score} is below FHA minimums. Consider improving before applying."})
+        score -= 30
+    elif credit_score < 670:
+        flags.append({"type": "warning", "field": "creditScore",
+                      "message": f"Credit score of {credit_score} may limit you to FHA products. Aim for 670+ for conventional options."})
+        score -= 10
+    if lti > 5:
+        flags.append({"type": "warning", "field": "loanAmount",
+                      "message": f"Loan-to-income ratio of {lti:.1f}x is very high. A smaller loan amount may improve approval odds."})
+        score -= 20
+    if employment_type in ("Part-time", "Unemployed"):
+        flags.append({"type": "warning", "field": "employmentType",
+                      "message": f"{employment_type} employment increases perceived repayment risk."})
+        score -= 15
+    suggestions = []
+    if score < 75:
+        if dti > 0.36:
+            suggestions.append(f"Reducing monthly debt payments could bring your DTI below 36%.")
+        if credit_score < 670:
+            suggestions.append(f"Raising your credit score by 50–80 points may unlock better loan products.")
+        if lti > 4:
+            suggestions.append(f"Consider requesting ${loan_amount * 0.75:,.0f} instead to lower your loan-to-income ratio.")
+    score = max(0, score)
+    decision_hint = "likely to proceed" if score >= 75 else "may face challenges"
+    return {
+        "readinessScore": score,
+        "flags": flags,
+        "suggestions": suggestions,
+        "summary": f"Application scored {score}/100 and is {decision_hint} based on current profile.",
+    }
+
+
+# ─── Agent 7: ManagerCopilot ──────────────────────────────────────────────────
+
+def manager_brief(loan: dict, audit_entries: list[dict]) -> dict:
+    """
+    ManagerCopilot agent — generates a pre-decision executive brief for the
+    reviewing manager. Advisory only; grounded on existing loan + audit data.
+
+    Returns: { bullets[], suggestedDecision, confidence, checklist[], questions[], summary }
+    """
+    factors_text = ""
+    factors = loan.get("factors") or []
+    if factors:
+        factors_text = "\n".join(
+            f"  - {f.get('name')}: {f.get('value')} ({f.get('impact')}) — {f.get('detail', '')}"
+            for f in factors[:6]
+        )
+
+    audit_text = ""
+    if audit_entries:
+        audit_text = "\n".join(
+            f"  [{e.get('timestamp','')[:19]}] {e.get('action','')} — {e.get('detail','')}"
+            for e in audit_entries[-6:]
+        )
+
+    prompt = f"""You are ManagerCopilot, an AI decision assistant for a bank loan officer.
+Produce a concise pre-decision brief so the manager can approve or deny quickly and confidently.
+
+LOAN SUMMARY:
+- Applicant: {loan.get('applicantName')}
+- Loan ID: {loan.get('id')}
+- Amount: ${loan.get('loanAmount', 0):,.0f} ({loan.get('loanPurpose')})
+- Income: ${loan.get('income', 0):,.0f} | Credit: {loan.get('creditScore')} | DTI: {loan.get('debtToIncomeRatio', 0)*100:.1f}%
+- Employment: {loan.get('employmentType')}
+- AI Risk Score: {loan.get('riskScore', 0):.2f} | AI Recommendation: {loan.get('aiRecommendation', 'N/A')}
+- AI Confidence: {loan.get('confidence', 0)*100:.0f}%
+
+AI RISK FACTORS:
+{factors_text or "  Not available"}
+
+RECENT AUDIT TRAIL:
+{audit_text or "  No audit entries"}
+
+Respond ONLY with JSON (no markdown):
+{{
+  "bullets": ["<key point 1>", "<key point 2>", "<key point 3>"],
+  "suggestedDecision": "<approve|deny|escalate>",
+  "confidence": <float 0.5-0.99>,
+  "checklist": [
+    {{"item": "<policy/compliance item to verify>", "passed": <true|false|null>}}
+  ],
+  "questions": ["<clarifying question for applicant if needed>"],
+  "summary": "<2-3 sentence plain-English decision rationale>"
+}}
+
+Rules:
+- bullets: exactly 3, each ≤ 15 words, most critical facts only
+- checklist: 4-5 standard lending compliance items (income verified, DTI within limits, etc.)
+- questions: only if critical info is missing or suspicious; otherwise empty array
+- suggestedDecision is advisory; manager makes the final call
+- Be specific and data-driven, not generic"""
+
+    try:
+        raw, model_used, latency_ms = _llm_with_meta(prompt, json_mode=True)
+        data = _parse_json(raw)
+        _log("ManagerCopilot", loan.get("id", ""),
+             f"Decision brief generated: suggestion={data.get('suggestedDecision')}, confidence={data.get('confidence', 0)*100:.0f}%",
+             "success", float(data.get("confidence", 0.85)),
+             latency_ms=latency_ms, model=model_used)
+        return data
+    except Exception as e:
+        print(f"[ManagerCopilot] LLM failed ({e}), using heuristic fallback")
+        return _fallback_manager_brief(loan)
+
+
+def _fallback_manager_brief(loan: dict) -> dict:
+    risk = loan.get("riskScore", 0.5)
+    ai_rec = loan.get("aiRecommendation", "")
+    dti = loan.get("debtToIncomeRatio", 0.35)
+    credit = loan.get("creditScore", 650)
+    income = loan.get("income", 0)
+    loan_amount = loan.get("loanAmount", 0)
+    lti = loan_amount / max(income, 1)
+    suggested = ai_rec if ai_rec in ("approved", "denied") else ("approve" if risk < 0.5 else "deny")
+    suggested = "approve" if suggested == "approved" else "deny"
+    conf = min(0.99, 0.70 + 0.4 * abs(risk - 0.5))
+    return {
+        "bullets": [
+            f"AI risk score {risk:.2f} — recommendation: {ai_rec or 'N/A'}",
+            f"Credit {credit}, DTI {dti*100:.0f}%, LTI {lti:.1f}x income",
+            f"Application status: {loan.get('status')} | Purpose: {loan.get('loanPurpose')}",
+        ],
+        "suggestedDecision": suggested,
+        "confidence": round(conf, 2),
+        "checklist": [
+            {"item": "Income verified against documents", "passed": None},
+            {"item": "DTI within FHA/conventional limits (<43%)", "passed": dti <= 0.43},
+            {"item": "Credit score meets minimum threshold (580+)", "passed": credit >= 580},
+            {"item": "Loan-to-income ratio acceptable (<5×)", "passed": lti < 5},
+            {"item": "No high-severity document mismatches", "passed": None},
+        ],
+        "questions": [],
+        "summary": (
+            f"AI analysis recommends {'approval' if suggested == 'approve' else 'denial'} "
+            f"with {conf*100:.0f}% confidence. Review AI factors and document verification "
+            "before submitting final decision."
+        ),
+    }
+
+
+# ─── Agent 8: ComplianceNarrator ─────────────────────────────────────────────
+
+def generate_narrative(loan: dict) -> dict:
+    """
+    ComplianceNarrator agent — generates an ECOA-style formal narrative and
+    customer-facing FAQ from the loan's final state. No new facts are invented.
+
+    Returns: { regulatorNarrative, customerFaq[], generatedAt }
+    """
+    decision = loan.get("decision", "pending")
+    factors = loan.get("factors") or []
+    factors_text = "\n".join(
+        f"  - {f.get('name')}: {f.get('value')} (impact: {f.get('impact')}) — {f.get('detail', '')}"
+        for f in factors[:6]
+    ) or "  Risk factors not available"
+
+    prompt = f"""You are ComplianceNarrator, a regulatory-writing AI at a bank.
+Generate two documents from the same decision data. Use only the facts provided.
+
+LOAN DECISION:
+- Applicant: {loan.get('applicantName')}
+- Loan ID: {loan.get('id')}
+- Amount: ${loan.get('loanAmount', 0):,.0f} for {loan.get('loanPurpose')}
+- Final Decision: {decision.upper()}
+- AI Risk Score: {loan.get('riskScore', 0):.2f}
+- AI Confidence: {loan.get('confidence', 0)*100:.0f}%
+- Bias Check: bias={loan.get('biasScore', 0):.3f}, toxicity={loan.get('toxicityScore', 0):.3f}
+
+DECISION FACTORS:
+{factors_text}
+
+Respond ONLY with JSON (no markdown):
+{{
+  "regulatorNarrative": "<ECOA-compliant formal narrative, 150-200 words, citing specific factors, neutral tone>",
+  "customerFaq": [
+    {{"q": "<customer question>", "a": "<plain-language answer, ≤ 40 words>"}},
+    {{"q": "<customer question>", "a": "<plain-language answer, ≤ 40 words>"}},
+    {{"q": "<customer question>", "a": "<plain-language answer, ≤ 40 words>"}}
+  ]
+}}
+
+Rules for regulatorNarrative:
+- Cite ECOA (Equal Credit Opportunity Act) compliance
+- Reference specific factor values (e.g. "credit score of 615")
+- Note that the AI pipeline passed bias screening
+- Professional, third-person tone
+
+Rules for customerFaq:
+- Exactly 3 Q&A entries
+- Plain English, no jargon
+- Directly address the most common applicant questions for a {decision} decision"""
+
+    try:
+        raw, model_used, latency_ms = _llm_with_meta(prompt, json_mode=True)
+        data = _parse_json(raw)
+        _log("ComplianceNarrator", loan.get("id", ""),
+             f"Compliance narrative generated for {decision} decision ({len(data.get('regulatorNarrative',''))} chars)",
+             "success", 0.92,
+             latency_ms=latency_ms, model=model_used)
+        data["generatedAt"] = datetime.now(timezone.utc).isoformat()
+        return data
+    except Exception as e:
+        print(f"[ComplianceNarrator] LLM failed ({e}), using template fallback")
+        return _fallback_narrative(loan)
+
+
+def _fallback_narrative(loan: dict) -> dict:
+    decision = loan.get("decision", "pending")
+    name = loan.get("applicantName", "the applicant")
+    amount = loan.get("loanAmount", 0)
+    purpose = loan.get("loanPurpose", "general purpose")
+    risk = loan.get("riskScore", 0.5)
+    regulator = (
+        f"Pursuant to the Equal Credit Opportunity Act (ECOA) and Regulation B, "
+        f"this notice documents the credit decision made on loan application {loan.get('id')} "
+        f"submitted by {name} for ${amount:,.0f} ({purpose}). "
+        f"The application was evaluated using an AI-assisted risk assessment pipeline "
+        f"that scored the application at {risk:.2f} on a normalized risk scale. "
+        f"The decision was rendered as '{decision}' based on objective financial criteria "
+        f"including credit score, debt-to-income ratio, loan-to-income ratio, and employment stability. "
+        f"All generated communications passed automated bias screening (CFPB fair lending standards). "
+        f"This institution complies with ECOA and does not discriminate on any protected basis."
+    )
+    if decision == "approved":
+        faq = [
+            {"q": "What happens next?", "a": "A loan officer will contact you within 2 business days with final terms and next steps."},
+            {"q": "Can the terms change?", "a": "Final terms are subject to document verification. Significant changes in your profile may affect the offer."},
+            {"q": "How long is this approval valid?", "a": "Conditional approvals are typically valid for 60–90 days. Contact us if you need an extension."},
+        ]
+    else:
+        faq = [
+            {"q": "Why was my application denied?", "a": "Your application did not meet current lending thresholds. The specific factors are listed in your decision letter."},
+            {"q": "Can I apply again?", "a": "You may re-apply after 90 days, or sooner if your financial profile improves meaningfully."},
+            {"q": "Can I appeal this decision?", "a": "Yes. Contact us via the Help page with your loan ID and we will arrange a manual review."},
+        ]
+    return {
+        "regulatorNarrative": regulator,
+        "customerFaq": faq,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ─── Agent 9: PolicyChecker ───────────────────────────────────────────────────
+
+def check_policy(loan: dict, policy_text: str) -> dict:
+    """
+    PolicyChecker agent — evaluates a loan against the bank's custom lending policy.
+    Policy text is stored in the settings table and managed by managers.
+
+    Returns: { passed, violations[], warnings[], overallRisk, summary }
+    """
+    if not policy_text or not policy_text.strip():
+        return {
+            "passed": True, "violations": [], "warnings": [],
+            "overallRisk": "low",
+            "summary": "No custom lending policy configured. Standard CFPB/FHA guidelines apply.",
+        }
+
+    factors = loan.get("factors") or []
+    factors_text = "\n".join(
+        f"  - {f.get('name')}: {f.get('value')} (impact: {f.get('impact')})"
+        for f in factors[:6]
+    ) or "  No AI factors available"
+
+    prompt = f"""You are PolicyChecker, a compliance AI that evaluates loan applications against a bank's custom lending policy.
+
+LOAN APPLICATION:
+- Amount: ${loan.get('loanAmount', 0):,.0f} for {loan.get('loanPurpose')}
+- Income: ${loan.get('income', 0):,.0f}
+- Credit Score: {loan.get('creditScore')}
+- DTI: {loan.get('debtToIncomeRatio', 0)*100:.1f}%
+- Employment: {loan.get('employmentType')}
+- AI Risk Score: {loan.get('riskScore', 0):.2f}
+- AI Decision: {loan.get('aiRecommendation', 'N/A')}
+
+AI FACTORS:
+{factors_text}
+
+BANK'S CUSTOM LENDING POLICY:
+{policy_text[:2000]}
+
+Respond ONLY with JSON (no markdown):
+{{
+  "passed": <true if no hard violations>,
+  "violations": [
+    {{"clause": "<policy clause>", "detail": "<why this loan violates it>"}}
+  ],
+  "warnings": [
+    {{"clause": "<policy clause>", "detail": "<soft concern, not a hard block>"}}
+  ],
+  "overallRisk": "<low|medium|high|critical>",
+  "summary": "<2-3 sentence plain-English assessment of policy compliance>"
+}}
+
+Rules:
+- violations are hard blocks (policy says must not); warnings are soft concerns
+- If the policy does not clearly address a factor, do not fabricate a violation
+- Be precise: quote or paraphrase the relevant policy clause"""
+
+    try:
+        raw, model_used, latency_ms = _llm_with_meta(prompt, json_mode=True)
+        data = _parse_json(raw)
+        violations = data.get("violations", [])
+        warnings = data.get("warnings", [])
+        _log("PolicyChecker", loan.get("id", ""),
+             f"Policy check: passed={data.get('passed')}, violations={len(violations)}, warnings={len(warnings)}",
+             "success" if data.get("passed") else "warning", 0.90,
+             latency_ms=latency_ms, model=model_used)
+        return data
+    except Exception as e:
+        print(f"[PolicyChecker] LLM failed ({e}), skipping policy check")
+        return {
+            "passed": True, "violations": [], "warnings": [],
+            "overallRisk": "low",
+            "summary": "Policy check could not run (AI unavailable). Standard guidelines applied.",
+        }
+

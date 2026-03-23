@@ -12,27 +12,36 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Search, Bot, ExternalLink } from "lucide-react";
+import { Search, Bot, ExternalLink, Clock } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion } from "framer-motion";
 import { PageTitle } from "@/components/PageTitle";
 import { Link } from "react-router-dom";
 import type { AgentLog } from "@/types/agents";
 
+const ALL_AGENTS = [
+  "RiskAssessor", "EmailGenerator", "BiasDetector", "ProductRecommender",
+  "DocumentVerifier", "IntakeAdvisor", "ManagerCopilot", "ComplianceNarrator", "PolicyChecker",
+];
+
 export default function AgentActivityPage() {
   const { data: logs, isLoading } = useAgentLogs();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [agentFilter, setAgentFilter] = useState("all");
   const [selectedLog, setSelectedLog] = useState<AgentLog | null>(null);
 
   const filtered = useMemo(() => {
     if (!logs) return [];
     return logs.filter((l) => {
-      const matchSearch = l.agentName.toLowerCase().includes(search.toLowerCase()) || l.action.toLowerCase().includes(search.toLowerCase());
+      const matchSearch =
+        l.agentName.toLowerCase().includes(search.toLowerCase()) ||
+        l.action.toLowerCase().includes(search.toLowerCase());
       const matchStatus = statusFilter === "all" || l.status === statusFilter;
-      return matchSearch && matchStatus;
+      const matchAgent = agentFilter === "all" || l.agentName === agentFilter;
+      return matchSearch && matchStatus && matchAgent;
     });
-  }, [logs, search, statusFilter]);
+  }, [logs, search, statusFilter, agentFilter]);
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
@@ -49,12 +58,22 @@ export default function AgentActivityPage() {
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input placeholder="Search agents or actions..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 h-9 text-sm" />
             </div>
+            <Select value={agentFilter} onValueChange={setAgentFilter}>
+              <SelectTrigger className="w-44 h-9 text-sm"><SelectValue placeholder="All Agents" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Agents</SelectItem>
+                {ALL_AGENTS.map((a) => (
+                  <SelectItem key={a} value={a}>{a}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-36 h-9 text-sm"><SelectValue placeholder="All" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="success">Success</SelectItem>
                 <SelectItem value="failure">Failed</SelectItem>
+                <SelectItem value="warning">Warning</SelectItem>
                 <SelectItem value="running">Running</SelectItem>
               </SelectContent>
             </Select>
@@ -67,6 +86,7 @@ export default function AgentActivityPage() {
                 <TableHead className="text-xs">Agent</TableHead>
                 <TableHead className="text-xs">Action</TableHead>
                 <TableHead className="text-xs">Timestamp</TableHead>
+                <TableHead className="text-xs">Latency</TableHead>
                 <TableHead className="text-xs">Confidence</TableHead>
                 <TableHead className="text-xs">Status</TableHead>
               </TableRow>
@@ -75,14 +95,14 @@ export default function AgentActivityPage() {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 5 }).map((_, j) => (
+                    {Array.from({ length: 6 }).map((_, j) => (
                       <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                     ))}
                   </TableRow>
                 ))
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No agent logs found</TableCell>
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No agent logs found</TableCell>
                 </TableRow>
               ) : (
                 filtered.map((log) => (
@@ -109,6 +129,14 @@ export default function AgentActivityPage() {
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{log.action}</TableCell>
                     <TableCell className="text-xs font-mono text-muted-foreground">{new Date(log.timestamp).toLocaleString()}</TableCell>
+                    <TableCell className="text-xs font-mono text-muted-foreground">
+                      {log.latencyMs && log.latencyMs > 0 ? (
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {log.latencyMs >= 1000 ? `${(log.latencyMs / 1000).toFixed(1)}s` : `${log.latencyMs}ms`}
+                        </span>
+                      ) : "—"}
+                    </TableCell>
                     <TableCell className="text-sm font-mono">{log.confidenceScore > 0 ? `${(log.confidenceScore * 100).toFixed(0)}%` : "—"}</TableCell>
                     <TableCell><StatusBadge status={log.status} /></TableCell>
                   </TableRow>
@@ -162,6 +190,23 @@ export default function AgentActivityPage() {
                   <div>
                     <p className="text-xs font-medium text-muted-foreground mb-0.5">Status</p>
                     <StatusBadge status={selectedLog.status} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-0.5">Latency</p>
+                    <p className="text-sm font-mono flex items-center gap-1">
+                      {selectedLog.latencyMs && selectedLog.latencyMs > 0 ? (
+                        <>
+                          <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                          {selectedLog.latencyMs >= 1000
+                            ? `${(selectedLog.latencyMs / 1000).toFixed(2)}s`
+                            : `${selectedLog.latencyMs}ms`}
+                        </>
+                      ) : "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-0.5">Model</p>
+                    <p className="text-sm font-mono">{selectedLog.model || "—"}</p>
                   </div>
                 </div>
                 {selectedLog.applicationId && (

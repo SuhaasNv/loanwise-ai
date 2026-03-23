@@ -11,10 +11,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { Loader2, AlertCircle, Plus, Trash2, GripVertical, PackageOpen } from "lucide-react";
+import { Loader2, AlertCircle, Plus, Trash2, GripVertical, PackageOpen, ShieldCheck } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getProductCatalog, saveProductCatalog } from "@/lib/api/settings";
+import { apiClient } from "@/lib/api-client";
 import type { ProductCatalogItem } from "@/types/loan";
 
 // ─── Product Catalog Tab ──────────────────────────────────────────────────────
@@ -184,6 +185,102 @@ function ProductCatalogTab() {
   );
 }
 
+// ─── Lending Policy Tab ───────────────────────────────────────────────────────
+
+const POLICY_PLACEHOLDER = `Example custom lending policy:
+
+1. Maximum loan amount is $500,000 for residential and $1,000,000 for commercial.
+2. Minimum credit score of 620 for all loan types.
+3. Maximum debt-to-income ratio of 43% for conventional loans.
+4. Self-employed applicants must provide 2 years of tax returns.
+5. No loans for gambling or adult entertainment purposes.
+
+Write your bank's specific overlay policies here. The AI PolicyChecker agent will evaluate each application against these rules during underwriting.`;
+
+function LendingPolicyTab() {
+  const qc = useQueryClient();
+
+  const { data: settingsData, isLoading } = useQuery({
+    queryKey: ["settings-policy"],
+    queryFn: () => apiClient<Record<string, unknown>>("/settings"),
+  });
+
+  const [policy, setPolicy] = useState<string | null>(null);
+  const currentPolicy = policy ?? (typeof settingsData?.lendingPolicy === "string" ? settingsData.lendingPolicy : "");
+
+  const saveMutation = useMutation({
+    mutationFn: (text: string) =>
+      apiClient<unknown>("/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ lendingPolicy: text }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings-policy"] });
+      setPolicy(null);
+      toast.success("Lending policy saved");
+    },
+    onError: () => toast.error("Failed to save lending policy"),
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-10 flex justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-violet-600" />
+          <CardTitle className="text-sm">Custom Lending Policy</CardTitle>
+        </div>
+        <CardDescription className="text-xs">
+          Define your bank's lending overlays in plain English. The AI PolicyChecker agent will evaluate every loan
+          application against these rules and flag violations or warnings before the manager reviews.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-lg border border-violet-200 bg-violet-50/40 dark:bg-violet-950/20 dark:border-violet-800 px-4 py-3 text-xs text-violet-700 dark:text-violet-400">
+          Write your policy in plain English. The AI will interpret it — no special syntax required.
+          Leave blank to disable PolicyChecker and apply only standard CFPB/FHA guidelines.
+        </div>
+        <textarea
+          className="w-full min-h-[220px] rounded-md border bg-secondary/30 p-3 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-violet-400"
+          value={currentPolicy}
+          onChange={(e) => setPolicy(e.target.value)}
+          placeholder={POLICY_PLACEHOLDER}
+        />
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            className="text-xs gap-1.5"
+            disabled={saveMutation.isPending || policy === null}
+            onClick={() => saveMutation.mutate(currentPolicy)}
+          >
+            {saveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Save Policy
+          </Button>
+          {currentPolicy && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs"
+              onClick={() => { setPolicy(""); }}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SettingsPage() {
   const { settings, updateSettings, commitSettings, resetSettings, hasUnsavedChanges, isSaving } = useSettings();
 
@@ -217,6 +314,7 @@ export default function SettingsPage() {
           <TabsTrigger value="bias" className="text-xs">Bias Detection</TabsTrigger>
           <TabsTrigger value="email" className="text-xs">Email Templates</TabsTrigger>
           <TabsTrigger value="catalog" className="text-xs">Product Catalog</TabsTrigger>
+          <TabsTrigger value="policy" className="text-xs">Lending Policy</TabsTrigger>
         </TabsList>
 
         {/* ── LLM ────────────────────────────────────────────────────────── */}
@@ -461,6 +559,11 @@ export default function SettingsPage() {
         {/* ── Product Catalog ──────────────────────────────────────────────── */}
         <TabsContent value="catalog">
           <ProductCatalogTab />
+        </TabsContent>
+
+        {/* ── Lending Policy ───────────────────────────────────────────────── */}
+        <TabsContent value="policy">
+          <LendingPolicyTab />
         </TabsContent>
       </Tabs>
     </div>

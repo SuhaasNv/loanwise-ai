@@ -34,7 +34,28 @@ const AGENTS = [
   },
 ] as const;
 
-const TOTAL_MS = AGENTS.reduce((s, a) => s + a.durationMs, 0); // ~28 s
+/** Map wall-clock elapsed → which agent is active and progress 0–1 within that segment */
+function segmentState(elapsed: number): { activeIdx: number; segmentProgress: number } {
+  let cursor = 0;
+  for (let i = 0; i < AGENTS.length; i++) {
+    const seg = AGENTS[i].durationMs;
+    if (elapsed < cursor + seg) {
+      const segmentProgress = Math.min(1, Math.max(0, (elapsed - cursor) / seg));
+      return { activeIdx: i, segmentProgress };
+    }
+    cursor += seg;
+  }
+  return { activeIdx: AGENTS.length - 1, segmentProgress: 1 };
+}
+
+/** Bar + label use the same value: equal weight per agent so the fill matches the step cards */
+function pipelinePercent(elapsed: number, complete: boolean): number {
+  if (complete) return 100;
+  const { activeIdx, segmentProgress } = segmentState(elapsed);
+  const n = AGENTS.length;
+  const raw = ((activeIdx + segmentProgress) / n) * 100;
+  return Math.min(99, Math.max(0, raw));
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -66,8 +87,7 @@ export function AgentPipelineProgress({
       const tick = () => {
         const now = performance.now();
         const ms = now - (startRef.current ?? now);
-        // Cap at 97 % while still running — final 3 % fills when complete
-        setElapsed(Math.min(ms, TOTAL_MS * 0.97));
+        setElapsed(ms);
         rafRef.current = requestAnimationFrame(tick);
       };
       rafRef.current = requestAnimationFrame(tick);
@@ -82,23 +102,10 @@ export function AgentPipelineProgress({
     };
   }, [isRunning]);
 
-  // 0 – 100
-  const overallPct = complete
-    ? 100
-    : Math.min(99, (elapsed / TOTAL_MS) * 100);
+  const overallPct = pipelinePercent(elapsed, complete);
 
-  // Which agent is currently active
-  let cursor = 0;
-  let activeIdx = 0;
-  for (let i = 0; i < AGENTS.length; i++) {
-    if (elapsed >= cursor && elapsed < cursor + AGENTS[i].durationMs) {
-      activeIdx = i;
-      break;
-    }
-    cursor += AGENTS[i].durationMs;
-    activeIdx = i; // last one while wrapping up
-  }
-  if (complete) activeIdx = AGENTS.length; // all done
+  const { activeIdx: segIdx } = segmentState(elapsed);
+  const activeIdx = complete ? AGENTS.length : segIdx;
 
   return (
     <div
@@ -134,35 +141,39 @@ export function AgentPipelineProgress({
         </span>
       </div>
 
-      {/* Overall bar */}
+      {/* Overall bar — scaleX matches the % label (avoids width-% layout quirks in flex pages) */}
       <div
         role="progressbar"
         aria-valuenow={Math.round(overallPct)}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-label={`Overall pipeline progress: ${Math.round(overallPct)}%`}
-        className="relative h-3 w-full overflow-hidden rounded-full bg-blue-100"
+        className="relative h-3 w-full min-w-0 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-950/40"
       >
-        {/* Fill — only transition width, never the gradient background */}
         <div
-          className={cn(
-            "h-full rounded-full",
-            complete
-              ? "bg-gradient-to-r from-emerald-400 to-emerald-500"
-              : "bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500"
-          )}
+          className="absolute inset-y-0 left-0 w-full origin-left will-change-transform"
           style={{
-            width: `${overallPct}%`,
-            transition: complete ? "width 700ms ease-out" : "width 120ms linear",
+            transform: `scaleX(${Math.max(0.002, overallPct / 100)})`,
+            transition: complete
+              ? "transform 700ms ease-out"
+              : "transform 100ms linear",
           }}
-        />
-        {/* Shimmer highlight — rendered as a sibling, NOT over the fill */}
-        {!complete && overallPct > 0 && (
+        >
           <div
-            className="pointer-events-none absolute top-0 h-full animate-shimmer bg-gradient-to-r from-transparent via-white/40 to-transparent"
-            style={{ width: `${overallPct}%`, left: 0 }}
-          />
-        )}
+            className={cn(
+              "relative h-full w-full rounded-full overflow-hidden",
+              complete
+                ? "bg-gradient-to-r from-emerald-400 to-emerald-500"
+                : "bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500"
+            )}
+          >
+            {!complete && overallPct > 0 && (
+              <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-full">
+                <div className="h-full w-[200%] animate-shimmer bg-gradient-to-r from-transparent via-white/35 to-transparent" />
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Per-agent steps */}

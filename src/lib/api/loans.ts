@@ -102,3 +102,65 @@ export interface PaginatedLoanListResponse extends LoanListResponse {
   totalPages: number;
   hasNext: boolean;
 }
+
+// ─── Intake Review ────────────────────────────────────────────────────────────
+
+export interface IntakeFlag {
+  type: "inconsistency" | "warning" | "tip";
+  field: string;
+  message: string;
+}
+
+export interface IntakeReviewResponse {
+  readinessScore: number;
+  flags: IntakeFlag[];
+  suggestions: string[];
+  summary: string;
+}
+
+export function intakeReview(data: {
+  applicantName: string;
+  income: number;
+  creditScore: number;
+  loanAmount: number;
+  debtToIncomeRatio: number;
+  employmentType: string;
+  loanPurpose: string;
+  loanId?: string;
+}) {
+  return apiClient<IntakeReviewResponse>("/loan/intake-review", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// ─── Manager Copilot Brief ────────────────────────────────────────────────────
+
+export interface ManagerBriefResponse {
+  bullets: string[];
+  suggestedDecision: "approve" | "deny" | "escalate";
+  confidence: number;
+  checklist: { item: string; passed: boolean | null }[];
+  questions: string[];
+  summary: string;
+}
+
+export function getManagerBrief(loanId: string) {
+  return apiClient<ManagerBriefResponse>(`/loans/${loanId}/manager-brief`, {
+    method: "POST",
+  });
+}
+
+// ─── Compliance Narrative ─────────────────────────────────────────────────────
+
+export interface NarrativeResponse {
+  regulatorNarrative: string;
+  customerFaq: { q: string; a: string }[];
+  generatedAt: string;
+}
+
+export function getLoanNarrative(loanId: string) {
+  return apiClient<NarrativeResponse>(`/loans/${loanId}/narrative`, {
+    method: "POST",
+  });
+}
